@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Unit tests with race detector
+        run: go test ./... -race -short -covermode=atomic -coverprofile=coverage.out
+      - name: Coverage gate (usecase, domain >= 80%)
+        run: |
+          set -euo pipefail
+          if [ ! -f coverage.out ]; then
+            echo "no coverage profile yet; skipping gate"
+            exit 0
+          fi
+          gate=80.0
+          fail=0
+          for pkg in usecase domain; do
+            line=$(go tool cover -func=coverage.out 2>/dev/null | grep -E "/internal/${pkg}/" || true)
+            if [ -z "$line" ]; then
+              echo "internal/${pkg}: no covered code yet; skipping"
+              continue
+            fi
+            pct=$(echo "$line" | grep -oE '[0-9]+\.[0-9]+%' | tail -1 | tr -d '%')
+            echo "internal/${pkg}: ${pct}%"
+            awk -v p="$pct" -v g="$gate" 'BEGIN { exit (p+0 >= g+0) ? 0 : 1 }' \
+              || { echo "::error::internal/${pkg} coverage ${pct}% is below ${gate}%"; fail=1; }
+          done
+          exit $fail
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...
+
+  commitlint:
+    name: Commitlint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install commitlint
+        run: go install github.com/conventionalcommit/commitlint@v0.12.0
+      - name: Lint PR commit messages
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for sha in $(git rev-list "$BASE".."$HEAD"); do
+            echo "== $sha =="
+            git log -1 --format=%B "$sha" | commitlint lint || fail=1
+          done
+          exit $fail
