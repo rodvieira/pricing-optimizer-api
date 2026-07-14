@@ -20,3 +20,11 @@ type LLMProvider interface {
 	// or error).
 	StreamStructured(ctx context.Context, in GenerationInput) (<-chan StreamChunk, error)
 }
+
+// Scraper fetches a URL and extracts its raw content for later
+// classification into a SiteProfile. Implementations decide how to render
+// the page (a static HTTP fetch vs a real browser for client-rendered SPAs);
+// no use case knows the concrete implementation.
+type Scraper interface {
+	Scrape(ctx context.Context, url string) (*ScrapedPage, error)
+}

@@ -18,4 +18,8 @@ var (
 	// ErrInvalidGenerationInput indicates a GenerationInput failed validation
 	// before any LLMProvider call was attempted.
 	ErrInvalidGenerationInput = errors.New("invalid generation input")
+
+	// ErrEmptyScrape indicates a Scraper could not extract meaningful content
+	// from a URL.
+	ErrEmptyScrape = errors.New("scrape produced no usable content")
 )
