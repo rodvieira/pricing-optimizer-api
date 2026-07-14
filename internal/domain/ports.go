@@ -19,6 +19,11 @@ type LLMProvider interface {
 	// channel is closed after exactly one terminal chunk (variation_completed
 	// or error).
 	StreamStructured(ctx context.Context, in GenerationInput) (<-chan StreamChunk, error)
+
+	// ClassifySite classifies a scraped page into a SiteProfile in a single
+	// call via structured tool calling. There is no streaming variant: only
+	// /v1/generate streams over SSE, not /v1/analyze.
+	ClassifySite(ctx context.Context, page ScrapedPage) (*SiteProfile, error)
 }
 
 // Scraper fetches a URL and extracts its raw content for later
