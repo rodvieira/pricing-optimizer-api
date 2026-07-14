@@ -13,6 +13,12 @@ import (
 
 //go:generate go tool mockgen -source=analyze.go -destination=../../../test/mocks/httpapi/analyzer_mock.go -package=mockhttpapi
 
+// maxAnalyzeBodyBytes bounds the /v1/analyze request body. The contract is a
+// single "url" field; a well-formed request is never more than a few hundred
+// bytes, so this only exists to stop an oversized body from being read in
+// full before json.Decode gets a chance to reject it.
+const maxAnalyzeBodyBytes = 1 << 20 // 1 MiB
+
 // analyzer is the minimal capability the /v1/analyze handler needs. Defined
 // here, at the point of consumption, so httpapi never imports usecase (the
 // constitution's adapter-never-imports-usecase rule): cmd wires the concrete
@@ -24,7 +30,8 @@ type analyzer interface {
 // AnalyzeSite implements api.ServerInterface. (POST /v1/analyze)
 func (s *Server) AnalyzeSite(w http.ResponseWriter, r *http.Request) {
 	var req api.AnalyzeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	body := http.MaxBytesReader(w, r.Body, maxAnalyzeBodyBytes)
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
 		writeProblem(w, r, http.StatusBadRequest, "malformed request body", err.Error())
 		return
 	}
@@ -39,13 +46,18 @@ func (s *Server) AnalyzeSite(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeAnalyzeError maps an AnalyzeSite.Execute error to the RFC 7807
-// response openapi.yaml documents for POST /v1/analyze.
+// response openapi.yaml documents for POST /v1/analyze. Only ErrInvalidInput
+// messages are safe to echo to the client (they describe the caller's own
+// request, e.g. "localhost is not an analyzable host"); every other case
+// wraps a dependency failure (scraper network errors, LLM provider errors)
+// that must not leak internal detail, so it goes to the server log instead.
 func writeAnalyzeError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrInvalidInput):
 		writeProblem(w, r, http.StatusUnprocessableEntity, "invalid analyze request", err.Error())
 	case errors.Is(err, domain.ErrSiteUnreachable):
-		writeProblem(w, r, http.StatusBadGateway, "could not fetch or parse the target site", err.Error())
+		slog.Error("analyze site: target unreachable", "error", err)
+		writeProblem(w, r, http.StatusBadGateway, "could not fetch or parse the target site", "")
 	default:
 		// ErrProviderUnavailable, ErrProviderUnauthorized, ErrInvalidLLMResponse,
 		// and anything unclassified are all our dependency's fault, not the

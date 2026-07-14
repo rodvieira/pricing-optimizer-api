@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -38,11 +39,12 @@ func TestAnalyzeSite(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		body        string
-		setup       func(a *mockhttpapi.Mockanalyzer)
-		wantStatus  int
-		wantContent string
+		name            string
+		body            string
+		setup           func(a *mockhttpapi.Mockanalyzer)
+		wantStatus      int
+		wantContent     string
+		wantDetailEmpty bool
 	}{
 		{
 			name: "valid url is analyzed and mapped to the response shape",
@@ -75,26 +77,29 @@ func TestAnalyzeSite(t *testing.T) {
 			wantContent: "application/problem+json",
 		},
 		{
-			name: "unreachable site maps to bad gateway",
+			name: "unreachable site maps to bad gateway without leaking the internal error",
 			body: `{"url":"https://example.com"}`,
 			setup: func(a *mockhttpapi.Mockanalyzer) {
 				a.EXPECT().
 					Execute(gomock.Any(), "https://example.com").
-					Return(nil, domain.ErrSiteUnreachable)
+					Return(nil, fmt.Errorf("analyze site: scrape https://example.com: %w: dial tcp 10.0.0.5:443: connection refused",
+						domain.ErrSiteUnreachable))
 			},
-			wantStatus:  http.StatusBadGateway,
-			wantContent: "application/problem+json",
+			wantStatus:      http.StatusBadGateway,
+			wantContent:     "application/problem+json",
+			wantDetailEmpty: true,
 		},
 		{
-			name: "provider failure maps to internal error",
+			name: "provider failure maps to internal error without leaking the internal error",
 			body: `{"url":"https://example.com"}`,
 			setup: func(a *mockhttpapi.Mockanalyzer) {
 				a.EXPECT().
 					Execute(gomock.Any(), "https://example.com").
-					Return(nil, domain.ErrProviderUnavailable)
+					Return(nil, fmt.Errorf("analyze site: classify https://example.com: %w", domain.ErrProviderUnavailable))
 			},
-			wantStatus:  http.StatusInternalServerError,
-			wantContent: "application/problem+json",
+			wantStatus:      http.StatusInternalServerError,
+			wantContent:     "application/problem+json",
+			wantDetailEmpty: true,
 		},
 	}
 
@@ -132,6 +137,9 @@ func TestAnalyzeSite(t *testing.T) {
 			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &problem))
 			assert.EqualValues(t, tt.wantStatus, problem["status"])
 			assert.NotEmpty(t, problem["title"])
+			if tt.wantDetailEmpty {
+				assert.NotContains(t, problem, "detail", "must not leak the internal dependency error to the client")
+			}
 		})
 	}
 }
