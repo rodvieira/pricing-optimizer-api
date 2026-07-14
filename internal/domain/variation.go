@@ -49,8 +49,17 @@ func (t PricingTier) validate() error {
 	if t.Name == "" {
 		return fmt.Errorf("%w: missing tier name", ErrInvalidLLMResponse)
 	}
-	if t.Price.CustomLabel == "" && t.Price.Currency == "" {
-		return fmt.Errorf("%w: tier %q missing price", ErrInvalidLLMResponse, t.Name)
+	if t.Price.CustomLabel == "" {
+		if t.Price.Currency == "" {
+			return fmt.Errorf("%w: tier %q missing price", ErrInvalidLLMResponse, t.Name)
+		}
+		if !t.Price.Interval.Valid() {
+			return fmt.Errorf("%w: tier %q has invalid interval %q",
+				ErrInvalidLLMResponse, t.Name, t.Price.Interval)
+		}
+		if t.Price.AmountMinorUnits < 0 {
+			return fmt.Errorf("%w: tier %q has a negative price", ErrInvalidLLMResponse, t.Name)
+		}
 	}
 	return nil
 }

@@ -79,6 +79,20 @@ func TestVariation_Validate(t *testing.T) {
 				v.Tiers[0].Price = Price{CustomLabel: "Contact us"}
 			},
 		},
+		{
+			name: "tier with an invalid interval is rejected",
+			mutate: func(v *Variation) {
+				v.Tiers[0].Price.Interval = "annual"
+			},
+			wantErr: ErrInvalidLLMResponse,
+		},
+		{
+			name: "tier with a negative price is rejected",
+			mutate: func(v *Variation) {
+				v.Tiers[0].Price.AmountMinorUnits = -100
+			},
+			wantErr: ErrInvalidLLMResponse,
+		},
 	}
 
 	for _, tt := range tests {

@@ -9,6 +9,16 @@ const (
 	IntervalYearly  Interval = "yearly"
 )
 
+// Valid reports whether i is one of the known billing intervals.
+func (i Interval) Valid() bool {
+	switch i {
+	case IntervalOneTime, IntervalMonthly, IntervalYearly:
+		return true
+	default:
+		return false
+	}
+}
+
 // Price is one tier's cost. AmountMinorUnits is in the currency's minor unit
 // (e.g. cents); 0 means free. CustomLabel, when set, overrides the rendered
 // price (e.g. "Contact us") and takes precedence over Amount/Currency.

@@ -14,4 +14,8 @@ var (
 	// ErrInvalidLLMResponse indicates the provider returned output that does
 	// not match the expected structured tool-call schema.
 	ErrInvalidLLMResponse = errors.New("llm returned an invalid structured response")
+
+	// ErrInvalidGenerationInput indicates a GenerationInput failed validation
+	// before any LLMProvider call was attempted.
+	ErrInvalidGenerationInput = errors.New("invalid generation input")
 )

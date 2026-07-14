@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 )
@@ -22,13 +21,14 @@ type GenerationInput struct {
 // its input before spending an API call on it.
 func (in GenerationInput) Validate() error {
 	if !in.Strategy.Valid() {
-		return fmt.Errorf("invalid strategy %q", in.Strategy)
+		return fmt.Errorf("%w: invalid strategy %q", ErrInvalidGenerationInput, in.Strategy)
 	}
 	if in.SiteProfile.URL == "" {
-		return errors.New("site profile url is required")
+		return fmt.Errorf("%w: site profile url is required", ErrInvalidGenerationInput)
 	}
 	if !currencyPattern.MatchString(in.Currency) {
-		return fmt.Errorf("invalid currency %q: must be a 3-letter ISO 4217 code", in.Currency)
+		return fmt.Errorf("%w: invalid currency %q: must be a 3-letter ISO 4217 code",
+			ErrInvalidGenerationInput, in.Currency)
 	}
 	return nil
 }

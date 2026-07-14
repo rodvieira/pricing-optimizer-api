@@ -19,9 +19,9 @@ func TestGenerationInput_Validate(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		mutate  func(in *GenerationInput)
-		wantErr string
+		name       string
+		mutate     func(in *GenerationInput)
+		wantErrMsg string
 	}{
 		{
 			name:   "valid input passes",
@@ -32,28 +32,28 @@ func TestGenerationInput_Validate(t *testing.T) {
 			mutate: func(in *GenerationInput) {
 				in.Strategy = "bogo"
 			},
-			wantErr: "invalid strategy",
+			wantErrMsg: "invalid strategy",
 		},
 		{
 			name: "missing site url is rejected",
 			mutate: func(in *GenerationInput) {
 				in.SiteProfile.URL = ""
 			},
-			wantErr: "site profile url is required",
+			wantErrMsg: "site profile url is required",
 		},
 		{
 			name: "lowercase currency is rejected",
 			mutate: func(in *GenerationInput) {
 				in.Currency = "usd"
 			},
-			wantErr: "invalid currency",
+			wantErrMsg: "invalid currency",
 		},
 		{
 			name: "empty currency is rejected",
 			mutate: func(in *GenerationInput) {
 				in.Currency = ""
 			},
-			wantErr: "invalid currency",
+			wantErrMsg: "invalid currency",
 		},
 	}
 
@@ -66,9 +66,9 @@ func TestGenerationInput_Validate(t *testing.T) {
 
 			err := in.Validate()
 
-			if tt.wantErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
+			if tt.wantErrMsg != "" {
+				require.ErrorIs(t, err, ErrInvalidGenerationInput)
+				assert.Contains(t, err.Error(), tt.wantErrMsg)
 				return
 			}
 			assert.NoError(t, err)
