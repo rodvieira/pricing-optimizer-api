@@ -2,6 +2,8 @@ package domain
 
 import "context"
 
+//go:generate go tool mockgen -source=ports.go -destination=../../test/mocks/domain/ports_mock.go -package=mockdomain
+
 // LLMProvider generates a single pricing-page variation via structured tool
 // calling. Implementations must never parse free-form model text: the
 // model's output is a typed tool call matching the Variation shape. Selected
