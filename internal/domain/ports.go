@@ -1,0 +1,20 @@
+package domain
+
+import "context"
+
+// LLMProvider generates a single pricing-page variation via structured tool
+// calling. Implementations must never parse free-form model text: the
+// model's output is a typed tool call matching the Variation shape. Selected
+// by an env-based factory (adapter/llm); no use case knows the concrete
+// provider.
+type LLMProvider interface {
+	// GenerateStructured produces one complete Variation for the requested
+	// strategy in a single call.
+	GenerateStructured(ctx context.Context, in GenerationInput) (*Variation, error)
+
+	// StreamStructured produces the same Variation as GenerateStructured, but
+	// emits incremental StreamChunk events as the model generates it. The
+	// channel is closed after exactly one terminal chunk (variation_completed
+	// or error).
+	StreamStructured(ctx context.Context, in GenerationInput) (<-chan StreamChunk, error)
+}
