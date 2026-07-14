@@ -1,0 +1,30 @@
+# Git hooks for pricing-optimizer-api. Install with: lefthook install
+# Hooks are file-scoped: commands only run when matching files are staged.
+
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      glob: "*.go"
+      run: golangci-lint fmt {staged_files}
+      stage_fixed: true
+    lint:
+      glob: "*.go"
+      run: golangci-lint run
+
+commit-msg:
+  commands:
+    commitlint:
+      run: commitlint lint --message {1}
+
+pre-push:
+  commands:
+    test:
+      # Guard against an empty module: `go test ./...` exits 1 with "matched no
+      # packages" until the first Go file exists.
+      run: |
+        if [ -n "$(git ls-files '*.go')" ]; then
+          go test ./... -short
+        else
+          echo "no Go files yet; skipping tests"
+        fi
