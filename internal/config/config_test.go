@@ -26,6 +26,10 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, 15*time.Second, cfg.ReadTimeout)
 				assert.Equal(t, 15*time.Second, cfg.WriteTimeout)
 				assert.Equal(t, 10*time.Second, cfg.ShutdownTimeout)
+				assert.Equal(t, "anthropic", cfg.LLMProvider)
+				assert.Equal(t, "claude-sonnet-5", cfg.AnthropicModel)
+				assert.Equal(t, "llama-3.3-70b-versatile", cfg.GroqModel)
+				assert.Equal(t, "llama-3.1-8b-instant", cfg.GroqFallbackModel)
 			},
 		},
 		{
@@ -56,6 +60,19 @@ func TestLoad(t *testing.T) {
 			name:    "unparseable port is a parse error",
 			env:     map[string]string{"PORT": "not-a-number"},
 			wantErr: "parse config from env",
+		},
+		{
+			name:    "unknown LLM provider is rejected",
+			env:     map[string]string{"LLM_PROVIDER": "openai"},
+			wantErr: "invalid LLM_PROVIDER",
+		},
+		{
+			name: "groq provider is accepted",
+			env:  map[string]string{"LLM_PROVIDER": "groq"},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.Equal(t, "groq", cfg.LLMProvider)
+			},
 		},
 	}
 
