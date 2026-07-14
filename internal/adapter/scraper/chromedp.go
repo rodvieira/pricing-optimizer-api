@@ -52,10 +52,14 @@ func (s *ChromedpScraper) Scrape(ctx context.Context, rawURL string) (*domain.Sc
 		return nil, fmt.Errorf("chromedp: navigate %s: %w", rawURL, err)
 	}
 
-	return &domain.ScrapedPage{
+	page := &domain.ScrapedPage{
 		URL:        rawURL,
 		Title:      strings.TrimSpace(title),
 		Text:       strings.TrimSpace(text),
 		SourceType: domain.SourceTypeSPA,
-	}, nil
+	}
+	if err := page.Validate(); err != nil {
+		return nil, fmt.Errorf("chromedp: %w", err)
+	}
+	return page, nil
 }

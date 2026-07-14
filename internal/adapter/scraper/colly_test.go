@@ -70,7 +70,6 @@ func TestCollyScraper_Scrape_EmptyBody(t *testing.T) {
 
 	page, err := s.Scrape(context.Background(), srv.URL)
 
-	require.NoError(t, err)
-	assert.Equal(t, "Empty", page.Title)
-	assert.Empty(t, page.Text)
+	require.ErrorIs(t, err, domain.ErrEmptyScrape)
+	assert.Nil(t, page)
 }

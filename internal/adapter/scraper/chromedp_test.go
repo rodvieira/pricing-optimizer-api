@@ -17,6 +17,9 @@ import (
 // process; there is no meaningful fake for it.
 func chromePath(t *testing.T) string {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping chromedp test in short mode: launches a real headless browser")
+	}
 	for _, name := range []string{"google-chrome-stable", "google-chrome", "chromium", "chromium-browser"} {
 		if path, err := exec.LookPath(name); err == nil {
 			return path
@@ -69,6 +72,20 @@ func TestChromedpScraper_Scrape_RendersClientSideContent(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Contains(t, page.Text, "Rendered by client-side JavaScript")
+}
+
+func TestChromedpScraper_Scrape_EmptyBody(t *testing.T) {
+	t.Parallel()
+
+	execPath := chromePath(t)
+
+	srv := staticHTMLServer(t, `<html><head><title></title></head><body></body></html>`)
+
+	s := NewChromedpScraper(execPath, 20*time.Second)
+	page, err := s.Scrape(context.Background(), srv.URL)
+
+	require.ErrorIs(t, err, domain.ErrEmptyScrape)
+	assert.Nil(t, page)
 }
 
 func TestChromedpScraper_Scrape_InvalidExecPath(t *testing.T) {

@@ -51,5 +51,8 @@ func (s *CollyScraper) Scrape(ctx context.Context, rawURL string) (*domain.Scrap
 	if err := c.Visit(rawURL); err != nil {
 		return nil, fmt.Errorf("colly: visit %s: %w", rawURL, err)
 	}
+	if err := page.Validate(); err != nil {
+		return nil, fmt.Errorf("colly: %w", err)
+	}
 	return page, nil
 }
