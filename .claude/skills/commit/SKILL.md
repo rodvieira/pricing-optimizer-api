@@ -1,6 +1,6 @@
 ---
 name: "commit"
-description: "Craft Conventional Commits for pricing-optimizer-api that match commitlint and this project's scopes and hygiene rules. Use when staging and committing Go/backend changes: choose type + architecture-aligned scope, write an imperative English subject and a why-focused body, split unrelated changes into separate commits, and append the required Co-Authored-By trailer."
+description: "Craft Conventional Commits for pricing-optimizer-api that match commitlint and this project's scopes and hygiene rules. Use when staging and committing Go/backend changes: choose type + architecture-aligned scope, write an imperative English subject and a why-focused body, split unrelated changes into separate commits, and add no AI or co-author attribution."
 argument-hint: "Optional: a hint about what changed or the intended scope"
 metadata:
   author: "rodvieira"
