@@ -19,11 +19,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - id: gofiles
+        name: Detect Go files
+        run: |
+          if [ -n "$(git ls-files '*.go')" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "no Go files yet; lint runs once the first package lands"
+          fi
       - uses: actions/setup-go@v5
+        if: steps.gofiles.outputs.present == 'true'
         with:
           go-version-file: go.mod
           cache: true
       - name: golangci-lint
+        if: steps.gofiles.outputs.present == 'true'
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
@@ -38,7 +49,12 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Unit tests with race detector
-        run: go test ./... -race -short -covermode=atomic -coverprofile=coverage.out
+        run: |
+          if [ -z "$(git ls-files '*.go')" ]; then
+            echo "no Go files yet; skipping tests"
+            exit 0
+          fi
+          go test ./... -race -short -covermode=atomic -coverprofile=coverage.out
       - name: Coverage gate (usecase, domain >= 80%)
         run: |
           set -euo pipefail
@@ -70,7 +86,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: go build ./...
+      - name: Build
+        run: |
+          if [ -z "$(git ls-files '*.go')" ]; then
+            echo "no Go files yet; skipping build"
+            exit 0
+          fi
+          go build ./...
 
   commitlint:
     name: Commitlint
