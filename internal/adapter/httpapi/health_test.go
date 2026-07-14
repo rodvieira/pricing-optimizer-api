@@ -59,10 +59,13 @@ func TestHealthEndpoint(t *testing.T) {
 
 			require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
-			var got healthStatus
-			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-			assert.Equal(t, "ok", got.Status)
-			assert.NotEmpty(t, got.Version)
+			// Assert the response shape against the contract using a raw map so
+			// that omitted fields (checks) are actually verified as absent.
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			assert.Equal(t, "ok", body["status"])
+			assert.NotEmpty(t, body["version"])
+			assert.NotContains(t, body, "checks", "checks must be omitted when empty per the contract")
 		})
 	}
 }

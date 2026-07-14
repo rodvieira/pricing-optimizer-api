@@ -23,5 +23,25 @@ func Load() (Config, error) {
 	if err := env.Parse(&cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config from env: %w", err)
 	}
+	if err := cfg.validate(); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+// validate enforces invariants the type system cannot express.
+func (c Config) validate() error {
+	if c.Port < 1 || c.Port > 65535 {
+		return fmt.Errorf("invalid PORT %d: must be between 1 and 65535", c.Port)
+	}
+	if c.ReadTimeout <= 0 {
+		return fmt.Errorf("invalid HTTP_READ_TIMEOUT %s: must be positive", c.ReadTimeout)
+	}
+	if c.WriteTimeout <= 0 {
+		return fmt.Errorf("invalid HTTP_WRITE_TIMEOUT %s: must be positive", c.WriteTimeout)
+	}
+	if c.ShutdownTimeout <= 0 {
+		return fmt.Errorf("invalid HTTP_SHUTDOWN_TIMEOUT %s: must be positive", c.ShutdownTimeout)
+	}
+	return nil
 }
