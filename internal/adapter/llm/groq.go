@@ -105,6 +105,31 @@ func (p *GroqProvider) StreamStructured(
 	return out, nil
 }
 
+// ClassifySite implements domain.LLMProvider.
+func (p *GroqProvider) ClassifySite(
+	ctx context.Context, page domain.ScrapedPage,
+) (*domain.SiteProfile, error) {
+	if err := page.Validate(); err != nil {
+		return nil, fmt.Errorf("llm: invalid input: %w", err)
+	}
+
+	resp, err := p.client.Chat.Completions.New(ctx, p.classifySiteParams(page))
+	if err != nil {
+		return nil, mapGroqError(err)
+	}
+
+	out, err := decodeGroqSiteProfileToolCall(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	profile := toDomainSiteProfile(page, out)
+	if err := profile.Validate(); err != nil {
+		return nil, fmt.Errorf("llm: %w", err)
+	}
+	return &profile, nil
+}
+
 // toolCallDeltas extracts non-empty tool-call argument fragments from one
 // streamed chunk.
 //
@@ -146,6 +171,49 @@ func (p *GroqProvider) newParams(in domain.GenerationInput) openai.ChatCompletio
 			openai.ChatCompletionNamedToolChoiceFunctionParam{Name: toolName},
 		),
 	}
+}
+
+func (p *GroqProvider) classifySiteParams(page domain.ScrapedPage) openai.ChatCompletionNewParams {
+	return openai.ChatCompletionNewParams{
+		Model: p.model,
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(classifySiteSystemPrompt()),
+			openai.UserMessage(classifySiteUserPrompt(page)),
+		},
+		Tools: []openai.ChatCompletionToolParam{
+			{
+				Function: openai.FunctionDefinitionParam{
+					Name:        classifySiteToolName,
+					Description: openai.String(classifySiteToolDescription),
+					Parameters:  classifySiteToolJSONSchema(),
+				},
+			},
+		},
+		ToolChoice: openai.ChatCompletionToolChoiceOptionParamOfChatCompletionNamedToolChoice(
+			openai.ChatCompletionNamedToolChoiceFunctionParam{Name: classifySiteToolName},
+		),
+	}
+}
+
+// decodeGroqSiteProfileToolCall extracts and decodes the emit_site_profile
+// tool call from a completed response. The model is instructed to always
+// call it; if it did not, that is a structured-output failure, not a bug to
+// recover from silently.
+func decodeGroqSiteProfileToolCall(resp *openai.ChatCompletion) (siteProfileToolOutput, error) {
+	if len(resp.Choices) == 0 {
+		return siteProfileToolOutput{}, fmt.Errorf("%w: no choices in response", domain.ErrInvalidLLMResponse)
+	}
+	for _, call := range resp.Choices[0].Message.ToolCalls {
+		if call.Function.Name != classifySiteToolName {
+			continue
+		}
+		var out siteProfileToolOutput
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &out); err != nil {
+			return siteProfileToolOutput{}, fmt.Errorf("%w: %w", domain.ErrInvalidLLMResponse, err)
+		}
+		return out, nil
+	}
+	return siteProfileToolOutput{}, fmt.Errorf("%w: model did not call %s", domain.ErrInvalidLLMResponse, classifySiteToolName)
 }
 
 // decodeGroqToolCall extracts and decodes the emit_pricing_variation tool

@@ -103,6 +103,31 @@ func (p *AnthropicProvider) StreamStructured(
 	return out, nil
 }
 
+// ClassifySite implements domain.LLMProvider.
+func (p *AnthropicProvider) ClassifySite(
+	ctx context.Context, page domain.ScrapedPage,
+) (*domain.SiteProfile, error) {
+	if err := page.Validate(); err != nil {
+		return nil, fmt.Errorf("llm: invalid input: %w", err)
+	}
+
+	msg, err := p.client.Messages.New(ctx, p.classifySiteParams(page))
+	if err != nil {
+		return nil, mapAnthropicError(err)
+	}
+
+	out, err := decodeAnthropicSiteProfileToolUse(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	profile := toDomainSiteProfile(page, out)
+	if err := profile.Validate(); err != nil {
+		return nil, fmt.Errorf("llm: %w", err)
+	}
+	return &profile, nil
+}
+
 // inputJSONDelta extracts the partial tool-input JSON fragment from one
 // streamed event, or "" if the event carries none.
 //
@@ -140,6 +165,48 @@ func (p *AnthropicProvider) newParams(in domain.GenerationInput) anthropic.Messa
 		},
 		ToolChoice: anthropic.ToolChoiceParamOfTool(toolName),
 	}
+}
+
+func (p *AnthropicProvider) classifySiteParams(page domain.ScrapedPage) anthropic.MessageNewParams {
+	return anthropic.MessageNewParams{
+		Model:     p.model,
+		MaxTokens: anthropicMaxTokens,
+		System:    []anthropic.TextBlockParam{{Text: classifySiteSystemPrompt()}},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(classifySiteUserPrompt(page))),
+		},
+		Tools: []anthropic.ToolUnionParam{
+			{
+				OfTool: &anthropic.ToolParam{
+					Name:        classifySiteToolName,
+					Description: anthropic.String(classifySiteToolDescription),
+					InputSchema: anthropic.ToolInputSchemaParam{
+						Properties: siteProfileToolProperties(),
+						Required:   classifySiteToolRequired,
+					},
+				},
+			},
+		},
+		ToolChoice: anthropic.ToolChoiceParamOfTool(classifySiteToolName),
+	}
+}
+
+// decodeAnthropicSiteProfileToolUse extracts and decodes the
+// emit_site_profile tool call from a completed message. The model is
+// instructed to always call it; if it did not, that is a structured-output
+// failure, not a bug to recover from silently.
+func decodeAnthropicSiteProfileToolUse(msg *anthropic.Message) (siteProfileToolOutput, error) {
+	for _, block := range msg.Content {
+		if block.Type != "tool_use" || block.Name != classifySiteToolName {
+			continue
+		}
+		var out siteProfileToolOutput
+		if err := json.Unmarshal(block.Input, &out); err != nil {
+			return siteProfileToolOutput{}, fmt.Errorf("%w: %w", domain.ErrInvalidLLMResponse, err)
+		}
+		return out, nil
+	}
+	return siteProfileToolOutput{}, fmt.Errorf("%w: model did not call %s", domain.ErrInvalidLLMResponse, classifySiteToolName)
 }
 
 // decodeAnthropicToolUse extracts and decodes the emit_pricing_variation tool

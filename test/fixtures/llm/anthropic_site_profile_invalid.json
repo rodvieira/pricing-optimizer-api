@@ -1,0 +1,29 @@
+{
+  "id": "msg_01SITEBAD",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_01SITEBAD",
+      "name": "emit_site_profile",
+      "input": {
+        "valueProposition": "",
+        "industry": "",
+        "audience": {
+          "segment": "",
+          "sophistication": "",
+          "pricePosition": ""
+        },
+        "keywords": []
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 200,
+    "output_tokens": 30
+  }
+}

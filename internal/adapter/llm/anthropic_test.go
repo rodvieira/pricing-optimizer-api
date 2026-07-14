@@ -211,6 +211,126 @@ func TestAnthropicProvider_StreamStructured_ClosesOnContextCancellation(t *testi
 	}
 }
 
+func TestAnthropicProvider_ClassifySite(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		fixture        string
+		statusCode     int
+		wantErr        error
+		wantGenericErr bool
+		assertOK       func(t *testing.T, p *domain.SiteProfile)
+	}{
+		{
+			name:       "decodes a valid tool call into a SiteProfile",
+			fixture:    "anthropic_site_profile_success.json",
+			statusCode: http.StatusOK,
+			assertOK: func(t *testing.T, p *domain.SiteProfile) {
+				t.Helper()
+				assert.Equal(t, "https://example.com", p.URL)
+				assert.Equal(t, "Acme Analytics", p.Title, "title comes from the scrape, not the model")
+				assert.Equal(t, "developer-tools", p.Industry)
+				assert.Equal(t, domain.SophisticationMedium, p.Audience.Sophistication)
+				assert.Equal(t, domain.SourceTypeStatic, p.SourceType, "source type comes from the scrape, not the model")
+				assert.False(t, p.AnalyzedAt.IsZero())
+			},
+		},
+		{
+			name:       "model not calling the tool is an invalid response",
+			fixture:    "anthropic_message_no_tool_use.json",
+			statusCode: http.StatusOK,
+			wantErr:    domain.ErrInvalidLLMResponse,
+		},
+		{
+			name:       "an empty decoded profile fails domain validation",
+			fixture:    "anthropic_site_profile_invalid.json",
+			statusCode: http.StatusOK,
+			wantErr:    domain.ErrInvalidLLMResponse,
+		},
+		{
+			name:       "401 maps to ErrProviderUnauthorized",
+			fixture:    "anthropic_error_401.json",
+			statusCode: http.StatusUnauthorized,
+			wantErr:    domain.ErrProviderUnauthorized,
+		},
+		{
+			name:       "429 maps to ErrProviderUnavailable",
+			fixture:    "anthropic_error_429.json",
+			statusCode: http.StatusTooManyRequests,
+			wantErr:    domain.ErrProviderUnavailable,
+		},
+		{
+			name:           "400 is wrapped but matches neither sentinel",
+			fixture:        "anthropic_error_401.json",
+			statusCode:     http.StatusBadRequest,
+			wantGenericErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := jsonServer(t, tt.statusCode, readFixture(t, tt.fixture))
+			provider := newTestAnthropicProvider(srv.URL)
+
+			got, err := provider.ClassifySite(context.Background(), testScrapedPage())
+
+			switch {
+			case tt.wantErr != nil:
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tt.wantErr)
+			case tt.wantGenericErr:
+				require.Error(t, err)
+				assert.NotErrorIs(t, err, domain.ErrProviderUnauthorized)
+				assert.NotErrorIs(t, err, domain.ErrProviderUnavailable)
+			default:
+				require.NoError(t, err)
+				tt.assertOK(t, got)
+			}
+		})
+	}
+}
+
+func TestAnthropicProvider_ClassifySite_RejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	provider := newTestAnthropicProvider("http://unused.invalid")
+	page := testScrapedPage()
+	page.Text = "  "
+
+	_, err := provider.ClassifySite(context.Background(), page)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid input")
+}
+
+func TestAnthropicProvider_ClassifySite_RequestConstruction(t *testing.T) {
+	t.Parallel()
+
+	srv, capturedBody := capturingServer(t, http.StatusOK, readFixture(t, "anthropic_site_profile_success.json"))
+	provider := newTestAnthropicProvider(srv.URL)
+
+	_, err := provider.ClassifySite(context.Background(), testScrapedPage())
+	require.NoError(t, err)
+
+	var req map[string]any
+	require.NoError(t, json.Unmarshal(capturedBody(), &req))
+
+	tools, ok := req["tools"].([]any)
+	require.True(t, ok, "request must include tools")
+	require.Len(t, tools, 1)
+	tool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, classifySiteToolName, tool["name"])
+
+	toolChoice, ok := req["tool_choice"].(map[string]any)
+	require.True(t, ok, "request must force tool_choice")
+	assert.Equal(t, "tool", toolChoice["type"])
+	assert.Equal(t, classifySiteToolName, toolChoice["name"])
+}
+
 func TestAnthropicProvider_GenerateStructured_RequestConstruction(t *testing.T) {
 	t.Parallel()
 
