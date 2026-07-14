@@ -1,0 +1,10 @@
+# oapi-codegen configuration. Generates the server interface and models from the
+# contract. Regenerate with `go generate ./...` after syncing openapi.yaml.
+package: api
+output: server.gen.go
+generate:
+  models: true
+  chi-server: true
+  embedded-spec: true
+output-options:
+  skip-prune: false
