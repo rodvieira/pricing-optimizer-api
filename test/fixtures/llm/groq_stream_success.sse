@@ -1,0 +1,12 @@
+data: {"id":"chatcmpl_stream01","object":"chat.completion.chunk","created":1735689600,"model":"llama-3.3-70b-versatile","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_stream01","type":"function","function":{"name":"emit_pricing_variation","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl_stream01","object":"chat.completion.chunk","created":1735689600,"model":"llama-3.3-70b-versatile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"headline\":\"Pick the plan that fits\",\"subheadline\":\"No credit card required\",\"tiers\":[{\"name\":\"Team\",\"price\":{\"amountMinorUn"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl_stream01","object":"chat.completion.chunk","created":1735689600,"model":"llama-3.3-70b-versatile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"its\":4900,\"currency\":\"USD\",\"interval\":\"monthly\",\"customLabel\":\"\"},\"tagline\":\"For growing teams\",\"features\":[\"Team seats\"],\"ct"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl_stream01","object":"chat.completion.chunk","created":1735689600,"model":"llama-3.3-70b-versatile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"a\":\"Start trial\",\"highlighted\":true,\"badge\":\"Most popular\"}],\"rationale\":\"Value-based pricing reflecting audience needs.\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl_stream01","object":"chat.completion.chunk","created":1735689600,"model":"llama-3.3-70b-versatile","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+
