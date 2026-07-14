@@ -83,21 +83,23 @@ func (p *GroqProvider) StreamStructured(
 		for stream.Next() {
 			for _, delta := range toolCallDeltas(stream.Current()) {
 				arguments += delta
-				out <- domain.StreamChunk{Type: domain.StreamChunkToken, Delta: delta}
+				if !sendChunk(ctx, out, domain.StreamChunk{Type: domain.StreamChunkToken, Delta: delta}) {
+					return
+				}
 			}
 		}
 
 		if err := stream.Err(); err != nil {
-			out <- domain.StreamChunk{Type: domain.StreamChunkError, Err: mapGroqError(err)}
+			sendChunk(ctx, out, domain.StreamChunk{Type: domain.StreamChunkError, Err: mapGroqError(err)})
 			return
 		}
 
 		variation, err := decodeStreamedVariation(in.Strategy, arguments)
 		if err != nil {
-			out <- domain.StreamChunk{Type: domain.StreamChunkError, Err: err}
+			sendChunk(ctx, out, domain.StreamChunk{Type: domain.StreamChunkError, Err: err})
 			return
 		}
-		out <- domain.StreamChunk{Type: domain.StreamChunkVariationCompleted, Variation: variation}
+		sendChunk(ctx, out, domain.StreamChunk{Type: domain.StreamChunkVariationCompleted, Variation: variation})
 	}()
 
 	return out, nil
@@ -105,6 +107,12 @@ func (p *GroqProvider) StreamStructured(
 
 // toolCallDeltas extracts non-empty tool-call argument fragments from one
 // streamed chunk.
+//
+// This ignores each call's Index and simply concatenates every fragment in
+// arrival order, which is only correct because ToolChoice forces exactly one
+// named function tool call. If a future change ever allows the model to call
+// more than one tool concurrently, this must group fragments by Index or it
+// will silently interleave unrelated arguments.
 func toolCallDeltas(chunk openai.ChatCompletionChunk) []string {
 	if len(chunk.Choices) == 0 {
 		return nil
@@ -165,6 +173,13 @@ func decodeGroqToolCall(resp *openai.ChatCompletion) (toolOutput, error) {
 // domain's sentinel errors so callers can branch on retryability without
 // depending on the SDK's error type.
 func mapGroqError(err error) error {
+	// A context cancellation/timeout is a caller decision, not a signal about
+	// provider health: it must never be conflated with ErrProviderUnavailable,
+	// which Sprint 4 uses to decide whether to fail over to another provider.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
 	var apiErr *openai.Error
 	if !errors.As(err, &apiErr) {
 		return fmt.Errorf("%w: %w", domain.ErrProviderUnavailable, err)

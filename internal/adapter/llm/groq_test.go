@@ -2,8 +2,10 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/openai/openai-go/option"
 	"github.com/stretchr/testify/assert"
@@ -173,4 +175,64 @@ func TestGroqProvider_GenerateStructured_TransportError(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrProviderUnavailable)
 	assert.NotErrorIs(t, err, domain.ErrProviderUnauthorized)
+}
+
+func TestGroqProvider_StreamStructured_ClosesOnContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	srv := sseServer(t, readFixture(t, "groq_stream_success.sse"))
+	provider := newTestGroqProvider(srv.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	chunks, err := provider.StreamStructured(ctx, testGenerationInput())
+	require.NoError(t, err)
+
+	// Simulate a consumer that walks away without draining: cancel
+	// immediately, then keep attempting to receive. If the producer
+	// goroutine ever blocks on a send instead of honoring ctx.Done(), this
+	// receive loop blocks forever too and the deadline below catches it.
+	cancel()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-chunks:
+			if !ok {
+				return // channel closed promptly: producer respected cancellation
+			}
+		case <-deadline:
+			t.Fatal("channel did not close after context cancellation; producer goroutine leaked")
+		}
+	}
+}
+
+func TestGroqProvider_GenerateStructured_RequestConstruction(t *testing.T) {
+	t.Parallel()
+
+	srv, capturedBody := capturingServer(t, http.StatusOK, readFixture(t, "groq_completion_success.json"))
+	provider := newTestGroqProvider(srv.URL)
+
+	_, err := provider.GenerateStructured(context.Background(), testGenerationInput())
+	require.NoError(t, err)
+
+	var req map[string]any
+	require.NoError(t, json.Unmarshal(capturedBody(), &req))
+
+	assert.Equal(t, "llama-3.3-70b-versatile", req["model"])
+
+	tools, ok := req["tools"].([]any)
+	require.True(t, ok, "request must include tools")
+	require.Len(t, tools, 1)
+	tool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	function, ok := tool["function"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, toolName, function["name"])
+
+	toolChoice, ok := req["tool_choice"].(map[string]any)
+	require.True(t, ok, "request must force tool_choice")
+	assert.Equal(t, "function", toolChoice["type"])
+	choiceFn, ok := toolChoice["function"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, toolName, choiceFn["name"])
 }

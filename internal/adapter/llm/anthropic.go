@@ -82,20 +82,22 @@ func (p *AnthropicProvider) StreamStructured(
 				continue
 			}
 			partialJSON += delta
-			out <- domain.StreamChunk{Type: domain.StreamChunkToken, Delta: delta}
+			if !sendChunk(ctx, out, domain.StreamChunk{Type: domain.StreamChunkToken, Delta: delta}) {
+				return
+			}
 		}
 
 		if err := stream.Err(); err != nil {
-			out <- domain.StreamChunk{Type: domain.StreamChunkError, Err: mapAnthropicError(err)}
+			sendChunk(ctx, out, domain.StreamChunk{Type: domain.StreamChunkError, Err: mapAnthropicError(err)})
 			return
 		}
 
 		variation, err := decodeStreamedVariation(in.Strategy, partialJSON)
 		if err != nil {
-			out <- domain.StreamChunk{Type: domain.StreamChunkError, Err: err}
+			sendChunk(ctx, out, domain.StreamChunk{Type: domain.StreamChunkError, Err: err})
 			return
 		}
-		out <- domain.StreamChunk{Type: domain.StreamChunkVariationCompleted, Variation: variation}
+		sendChunk(ctx, out, domain.StreamChunk{Type: domain.StreamChunkVariationCompleted, Variation: variation})
 	}()
 
 	return out, nil
@@ -103,6 +105,12 @@ func (p *AnthropicProvider) StreamStructured(
 
 // inputJSONDelta extracts the partial tool-input JSON fragment from one
 // streamed event, or "" if the event carries none.
+//
+// This ignores event.Index and simply concatenates every content_block_delta
+// in arrival order, which is only correct because ToolChoice forces exactly
+// one tool and therefore exactly one content block (index 0). If a future
+// change ever allows more than one content block (e.g. extended thinking),
+// this must filter by index or it will silently interleave unrelated deltas.
 func inputJSONDelta(event anthropic.MessageStreamEventUnion) string {
 	if event.Type != "content_block_delta" {
 		return ""
@@ -156,6 +164,13 @@ func decodeAnthropicToolUse(msg *anthropic.Message) (toolOutput, error) {
 // domain's sentinel errors so callers can branch on retryability without
 // depending on the SDK's error type.
 func mapAnthropicError(err error) error {
+	// A context cancellation/timeout is a caller decision, not a signal about
+	// provider health: it must never be conflated with ErrProviderUnavailable,
+	// which Sprint 4 uses to decide whether to fail over to another provider.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
 	var apiErr *anthropic.Error
 	if !errors.As(err, &apiErr) {
 		return fmt.Errorf("%w: %w", domain.ErrProviderUnavailable, err)

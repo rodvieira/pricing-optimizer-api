@@ -2,8 +2,10 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/stretchr/testify/assert"
@@ -178,4 +180,60 @@ func TestAnthropicProvider_GenerateStructured_TransportError(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrProviderUnavailable)
 	assert.NotErrorIs(t, err, domain.ErrProviderUnauthorized)
+}
+
+func TestAnthropicProvider_StreamStructured_ClosesOnContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	srv := sseServer(t, readFixture(t, "anthropic_stream_success.sse"))
+	provider := newTestAnthropicProvider(srv.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	chunks, err := provider.StreamStructured(ctx, testGenerationInput())
+	require.NoError(t, err)
+
+	// Simulate a consumer that walks away without draining: cancel
+	// immediately, then keep attempting to receive. If the producer
+	// goroutine ever blocks on a send instead of honoring ctx.Done(), this
+	// receive loop blocks forever too and the deadline below catches it.
+	cancel()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-chunks:
+			if !ok {
+				return // channel closed promptly: producer respected cancellation
+			}
+		case <-deadline:
+			t.Fatal("channel did not close after context cancellation; producer goroutine leaked")
+		}
+	}
+}
+
+func TestAnthropicProvider_GenerateStructured_RequestConstruction(t *testing.T) {
+	t.Parallel()
+
+	srv, capturedBody := capturingServer(t, http.StatusOK, readFixture(t, "anthropic_message_success.json"))
+	provider := newTestAnthropicProvider(srv.URL)
+
+	_, err := provider.GenerateStructured(context.Background(), testGenerationInput())
+	require.NoError(t, err)
+
+	var req map[string]any
+	require.NoError(t, json.Unmarshal(capturedBody(), &req))
+
+	assert.Equal(t, "claude-sonnet-5", req["model"])
+
+	tools, ok := req["tools"].([]any)
+	require.True(t, ok, "request must include tools")
+	require.Len(t, tools, 1)
+	tool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, toolName, tool["name"])
+
+	toolChoice, ok := req["tool_choice"].(map[string]any)
+	require.True(t, ok, "request must force tool_choice")
+	assert.Equal(t, "tool", toolChoice["type"])
+	assert.Equal(t, toolName, toolChoice["name"])
 }
