@@ -14,11 +14,13 @@ var Version = "dev"
 // fall through to api.Unimplemented, which responds with 501 Not Implemented.
 type Server struct {
 	api.Unimplemented
+	analyzer analyzer
 }
 
-// NewServer creates the API server implementation.
-func NewServer() *Server {
-	return &Server{}
+// NewServer creates the API server implementation. analyzer backs
+// POST /v1/analyze; cmd/api wires in the concrete usecase.AnalyzeSite.
+func NewServer(analyzer analyzer) *Server {
+	return &Server{analyzer: analyzer}
 }
 
 // HealthCheck reports service liveness for Fly and uptime monitors.
