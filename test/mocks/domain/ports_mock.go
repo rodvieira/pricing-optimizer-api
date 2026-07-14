@@ -70,3 +70,42 @@ func (mr *MockLLMProviderMockRecorder) StreamStructured(ctx, in any) *gomock.Cal
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamStructured", reflect.TypeOf((*MockLLMProvider)(nil).StreamStructured), ctx, in)
 }
+
+// MockScraper is a mock of Scraper interface.
+type MockScraper struct {
+	ctrl     *gomock.Controller
+	recorder *MockScraperMockRecorder
+	isgomock struct{}
+}
+
+// MockScraperMockRecorder is the mock recorder for MockScraper.
+type MockScraperMockRecorder struct {
+	mock *MockScraper
+}
+
+// NewMockScraper creates a new mock instance.
+func NewMockScraper(ctrl *gomock.Controller) *MockScraper {
+	mock := &MockScraper{ctrl: ctrl}
+	mock.recorder = &MockScraperMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockScraper) EXPECT() *MockScraperMockRecorder {
+	return m.recorder
+}
+
+// Scrape mocks base method.
+func (m *MockScraper) Scrape(ctx context.Context, url string) (*domain.ScrapedPage, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Scrape", ctx, url)
+	ret0, _ := ret[0].(*domain.ScrapedPage)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Scrape indicates an expected call of Scrape.
+func (mr *MockScraperMockRecorder) Scrape(ctx, url any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Scrape", reflect.TypeOf((*MockScraper)(nil).Scrape), ctx, url)
+}
