@@ -26,6 +26,15 @@ type Config struct {
 	GroqAPIKey        string `env:"GROQ_API_KEY"`
 	GroqModel         string `env:"GROQ_MODEL" envDefault:"llama-3.3-70b-versatile"`
 	GroqFallbackModel string `env:"GROQ_FALLBACK_MODEL" envDefault:"llama-3.1-8b-instant"`
+
+	// ScraperStaticTimeout bounds the fast colly fetch FallbackScraper always
+	// tries first. ScraperBrowserTimeout bounds the chromedp fallback, which
+	// launches a real browser and needs materially longer. ChromeExecPath
+	// overrides chromedp's own well-known-path search; empty lets it discover
+	// the binary itself.
+	ScraperStaticTimeout  time.Duration `env:"SCRAPER_STATIC_TIMEOUT" envDefault:"10s"`
+	ScraperBrowserTimeout time.Duration `env:"SCRAPER_BROWSER_TIMEOUT" envDefault:"20s"`
+	ChromeExecPath        string        `env:"CHROME_EXEC_PATH" envDefault:""`
 }
 
 // Load reads and validates the configuration from the environment.
@@ -56,6 +65,12 @@ func (c Config) validate() error {
 	}
 	if c.LLMProvider != "anthropic" && c.LLMProvider != "groq" {
 		return fmt.Errorf("invalid LLM_PROVIDER %q: must be \"anthropic\" or \"groq\"", c.LLMProvider)
+	}
+	if c.ScraperStaticTimeout <= 0 {
+		return fmt.Errorf("invalid SCRAPER_STATIC_TIMEOUT %s: must be positive", c.ScraperStaticTimeout)
+	}
+	if c.ScraperBrowserTimeout <= 0 {
+		return fmt.Errorf("invalid SCRAPER_BROWSER_TIMEOUT %s: must be positive", c.ScraperBrowserTimeout)
 	}
 	return nil
 }

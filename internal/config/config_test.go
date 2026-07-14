@@ -30,6 +30,9 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, "claude-sonnet-5", cfg.AnthropicModel)
 				assert.Equal(t, "llama-3.3-70b-versatile", cfg.GroqModel)
 				assert.Equal(t, "llama-3.1-8b-instant", cfg.GroqFallbackModel)
+				assert.Equal(t, 10*time.Second, cfg.ScraperStaticTimeout)
+				assert.Equal(t, 20*time.Second, cfg.ScraperBrowserTimeout)
+				assert.Empty(t, cfg.ChromeExecPath)
 			},
 		},
 		{
@@ -72,6 +75,24 @@ func TestLoad(t *testing.T) {
 			assert: func(t *testing.T, cfg Config) {
 				t.Helper()
 				assert.Equal(t, "groq", cfg.LLMProvider)
+			},
+		},
+		{
+			name:    "non-positive scraper static timeout is rejected",
+			env:     map[string]string{"SCRAPER_STATIC_TIMEOUT": "0s"},
+			wantErr: "invalid SCRAPER_STATIC_TIMEOUT",
+		},
+		{
+			name:    "non-positive scraper browser timeout is rejected",
+			env:     map[string]string{"SCRAPER_BROWSER_TIMEOUT": "-1s"},
+			wantErr: "invalid SCRAPER_BROWSER_TIMEOUT",
+		},
+		{
+			name: "chrome exec path override is applied",
+			env:  map[string]string{"CHROME_EXEC_PATH": "/usr/bin/google-chrome-stable"},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.Equal(t, "/usr/bin/google-chrome-stable", cfg.ChromeExecPath)
 			},
 		},
 	}

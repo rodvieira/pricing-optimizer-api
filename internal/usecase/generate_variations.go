@@ -27,15 +27,15 @@ type GenerateVariationsInput struct {
 func (in GenerateVariationsInput) Validate() error {
 	if len(in.Strategies) < minStrategies || len(in.Strategies) > maxStrategies {
 		return fmt.Errorf("%w: must request %d-%d strategies, got %d",
-			ErrInvalidInput, minStrategies, maxStrategies, len(in.Strategies))
+			domain.ErrInvalidInput, minStrategies, maxStrategies, len(in.Strategies))
 	}
 	seen := make(map[domain.PricingStrategy]struct{}, len(in.Strategies))
 	for _, s := range in.Strategies {
 		if !s.Valid() {
-			return fmt.Errorf("%w: invalid strategy %q", ErrInvalidInput, s)
+			return fmt.Errorf("%w: invalid strategy %q", domain.ErrInvalidInput, s)
 		}
 		if _, dup := seen[s]; dup {
-			return fmt.Errorf("%w: duplicate strategy %q", ErrInvalidInput, s)
+			return fmt.Errorf("%w: duplicate strategy %q", domain.ErrInvalidInput, s)
 		}
 		seen[s] = struct{}{}
 	}
