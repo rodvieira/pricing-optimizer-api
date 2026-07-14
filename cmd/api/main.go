@@ -13,7 +13,10 @@ import (
 	"syscall"
 
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/httpapi"
+	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/llm"
+	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/scraper"
 	"github.com/rodvieira/pricing-optimizer-api/internal/config"
+	"github.com/rodvieira/pricing-optimizer-api/internal/usecase"
 )
 
 func main() {
@@ -31,9 +34,27 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	llmProvider, err := llm.NewProvider(llm.Config{
+		Provider:        cfg.LLMProvider,
+		AnthropicAPIKey: cfg.AnthropicAPIKey,
+		AnthropicModel:  cfg.AnthropicModel,
+		GroqAPIKey:      cfg.GroqAPIKey,
+		GroqModel:       cfg.GroqModel,
+	})
+	if err != nil {
+		return fmt.Errorf("build llm provider: %w", err)
+	}
+
+	siteScraper := scraper.NewFallbackScraper(
+		scraper.NewCollyScraper(cfg.ScraperStaticTimeout),
+		scraper.NewChromedpScraper(cfg.ChromeExecPath, cfg.ScraperBrowserTimeout),
+	)
+
+	analyzeSite := usecase.NewAnalyzeSite(siteScraper, llmProvider)
+
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
-		Handler:           httpapi.NewRouter(httpapi.NewServer()),
+		Handler:           httpapi.NewRouter(httpapi.NewServer(analyzeSite)),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
