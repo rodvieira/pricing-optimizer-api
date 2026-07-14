@@ -41,6 +41,21 @@ func (m *MockLLMProvider) EXPECT() *MockLLMProviderMockRecorder {
 	return m.recorder
 }
 
+// ClassifySite mocks base method.
+func (m *MockLLMProvider) ClassifySite(ctx context.Context, page domain.ScrapedPage) (*domain.SiteProfile, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClassifySite", ctx, page)
+	ret0, _ := ret[0].(*domain.SiteProfile)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ClassifySite indicates an expected call of ClassifySite.
+func (mr *MockLLMProviderMockRecorder) ClassifySite(ctx, page any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClassifySite", reflect.TypeOf((*MockLLMProvider)(nil).ClassifySite), ctx, page)
+}
+
 // GenerateStructured mocks base method.
 func (m *MockLLMProvider) GenerateStructured(ctx context.Context, in domain.GenerationInput) (*domain.Variation, error) {
 	m.ctrl.T.Helper()

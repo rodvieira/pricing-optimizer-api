@@ -1,0 +1,31 @@
+{
+  "id": "chatcmpl_01SITE",
+  "object": "chat.completion",
+  "created": 1735689600,
+  "model": "llama-3.3-70b-versatile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_01SITE",
+            "type": "function",
+            "function": {
+              "name": "emit_site_profile",
+              "arguments": "{\"valueProposition\":\"Real-time analytics for indie SaaS founders\",\"industry\":\"developer-tools\",\"audience\":{\"segment\":\"SaaS founders\",\"sophistication\":\"medium\",\"pricePosition\":\"mid_market\"},\"keywords\":[\"analytics\",\"saas\",\"dashboards\"]}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 360,
+    "completion_tokens": 80,
+    "total_tokens": 440
+  }
+}

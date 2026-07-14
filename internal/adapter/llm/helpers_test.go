@@ -101,3 +101,13 @@ func testGenerationInput() domain.GenerationInput {
 		Currency: "USD",
 	}
 }
+
+// testScrapedPage is a valid ScrapedPage shared across adapter tests.
+func testScrapedPage() domain.ScrapedPage {
+	return domain.ScrapedPage{
+		URL:        "https://example.com",
+		Title:      "Acme Analytics",
+		Text:       "Real-time analytics for indie SaaS founders. Track usage, retention, and revenue.",
+		SourceType: domain.SourceTypeStatic,
+	}
+}
