@@ -33,7 +33,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
-		Handler:           httpapi.NewRouter(),
+		Handler:           httpapi.NewRouter(httpapi.NewServer()),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
