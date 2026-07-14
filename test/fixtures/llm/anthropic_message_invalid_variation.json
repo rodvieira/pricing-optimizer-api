@@ -1,0 +1,25 @@
+{
+  "id": "msg_01INVALID",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_01BAD",
+      "name": "emit_pricing_variation",
+      "input": {
+        "headline": "",
+        "subheadline": "",
+        "tiers": [],
+        "rationale": "The model forgot everything."
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 300,
+    "output_tokens": 40
+  }
+}

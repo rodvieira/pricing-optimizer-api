@@ -1,0 +1,31 @@
+{
+  "id": "chatcmpl_01ABC",
+  "object": "chat.completion",
+  "created": 1735689600,
+  "model": "llama-3.3-70b-versatile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_01XYZ",
+            "type": "function",
+            "function": {
+              "name": "emit_pricing_variation",
+              "arguments": "{\"headline\":\"Pick the plan that fits\",\"subheadline\":\"No credit card required\",\"tiers\":[{\"name\":\"Starter\",\"price\":{\"amountMinorUnits\":0,\"currency\":\"USD\",\"interval\":\"monthly\",\"customLabel\":\"\"},\"tagline\":\"Try it out\",\"features\":[\"Core features\"],\"cta\":\"Get started\",\"highlighted\":false,\"badge\":\"\"},{\"name\":\"Team\",\"price\":{\"amountMinorUnits\":4900,\"currency\":\"USD\",\"interval\":\"monthly\",\"customLabel\":\"\"},\"tagline\":\"For growing teams\",\"features\":[\"Everything in Starter\",\"Team seats\"],\"cta\":\"Start trial\",\"highlighted\":true,\"badge\":\"Most popular\"}],\"rationale\":\"A free Starter tier builds a ladder toward Team.\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 480,
+    "completion_tokens": 160,
+    "total_tokens": 640
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "msg_01ABC123",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_01XYZ",
+      "name": "emit_pricing_variation",
+      "input": {
+        "headline": "Simple, transparent pricing",
+        "subheadline": "Start free, upgrade when you grow",
+        "tiers": [
+          {
+            "name": "Free",
+            "price": {
+              "amountMinorUnits": 0,
+              "currency": "USD",
+              "interval": "monthly",
+              "customLabel": ""
+            },
+            "tagline": "For hobby projects",
+            "features": ["1 project", "Community support"],
+            "cta": "Start free",
+            "highlighted": false,
+            "badge": ""
+          },
+          {
+            "name": "Pro",
+            "price": {
+              "amountMinorUnits": 2900,
+              "currency": "USD",
+              "interval": "monthly",
+              "customLabel": ""
+            },
+            "tagline": "For growing teams",
+            "features": ["Unlimited projects", "Priority support"],
+            "cta": "Start Pro trial",
+            "highlighted": true,
+            "badge": "Most popular"
+          }
+        ],
+        "rationale": "A generous free tier builds trust before asking for payment; Pro is anchored against the value of unlimited projects."
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 512,
+    "output_tokens": 180
+  }
+}

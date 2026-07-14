@@ -15,6 +15,17 @@ type Config struct {
 	ReadTimeout     time.Duration `env:"HTTP_READ_TIMEOUT" envDefault:"15s"`
 	WriteTimeout    time.Duration `env:"HTTP_WRITE_TIMEOUT" envDefault:"15s"`
 	ShutdownTimeout time.Duration `env:"HTTP_SHUTDOWN_TIMEOUT" envDefault:"10s"`
+
+	// LLMProvider selects the LLMProvider implementation: "anthropic" or "groq".
+	// Per ADR-0003: Anthropic in development, Groq in production.
+	LLMProvider string `env:"LLM_PROVIDER" envDefault:"anthropic"`
+
+	AnthropicAPIKey string `env:"ANTHROPIC_API_KEY"`
+	AnthropicModel  string `env:"ANTHROPIC_MODEL" envDefault:"claude-sonnet-5"`
+
+	GroqAPIKey        string `env:"GROQ_API_KEY"`
+	GroqModel         string `env:"GROQ_MODEL" envDefault:"llama-3.3-70b-versatile"`
+	GroqFallbackModel string `env:"GROQ_FALLBACK_MODEL" envDefault:"llama-3.1-8b-instant"`
 }
 
 // Load reads and validates the configuration from the environment.
@@ -42,6 +53,9 @@ func (c Config) validate() error {
 	}
 	if c.ShutdownTimeout <= 0 {
 		return fmt.Errorf("invalid HTTP_SHUTDOWN_TIMEOUT %s: must be positive", c.ShutdownTimeout)
+	}
+	if c.LLMProvider != "anthropic" && c.LLMProvider != "groq" {
+		return fmt.Errorf("invalid LLM_PROVIDER %q: must be \"anthropic\" or \"groq\"", c.LLMProvider)
 	}
 	return nil
 }
