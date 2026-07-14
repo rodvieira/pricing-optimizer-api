@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,7 +75,11 @@ func TestGenerateVariations_Execute(t *testing.T) {
 			want: 2,
 		},
 		{
-			name: "returns the first provider error and cancels siblings",
+			// Cancellation itself is exercised separately in
+			// TestGenerateVariations_Execute_CancelsSiblingsOnFirstError;
+			// this case only checks that the aggregate error propagates
+			// regardless of how many sibling calls happened to run first.
+			name: "returns the first provider error",
 			in:   validGenerateVariationsInput(),
 			setup: func(m *mockdomain.MockLLMProvider) {
 				m.EXPECT().
@@ -184,4 +189,46 @@ func TestGenerateVariations_Execute_PropagatesEachStrategyToItsCall(t *testing.T
 		[]domain.PricingStrategy{domain.StrategyAnchor, domain.StrategyFreemium, domain.StrategyValueBased},
 		[]domain.PricingStrategy{got[0].Strategy, got[1].Strategy, got[2].Strategy},
 	)
+}
+
+func TestGenerateVariations_Execute_CancelsSiblingsOnFirstError(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	provider := mockdomain.NewMockLLMProvider(ctrl)
+
+	provider.EXPECT().
+		GenerateStructured(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, in domain.GenerationInput) (*domain.Variation, error) {
+			if in.Strategy == domain.StrategyAnchor {
+				return nil, domain.ErrProviderUnavailable
+			}
+			// The sibling call: this only returns because errgroup
+			// canceled the shared context in response to the anchor
+			// call's error. If Execute stopped propagating ctx to each
+			// GenerateStructured call, this would block forever and the
+			// timeout below would catch it.
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}).
+		Times(2)
+
+	uc := usecase.NewGenerateVariations(provider)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := uc.Execute(context.Background(), usecase.GenerateVariationsInput{
+			SiteProfile: fixtureSiteProfile(),
+			Strategies:  []domain.PricingStrategy{domain.StrategyAnchor, domain.StrategyFreemium},
+			Currency:    "USD",
+		})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, domain.ErrProviderUnavailable)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Execute did not return; sibling call was not canceled by the shared context")
+	}
 }
