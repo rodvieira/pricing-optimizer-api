@@ -1,0 +1,22 @@
+# Binaries
+/bin/
+/tmp/
+*.exe
+*.test
+*.out
+
+# Air hot-reload
+/tmp/main
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# Coverage
+coverage.out
+coverage.html
+
+# OS / editor
+.DS_Store
+*.swp
