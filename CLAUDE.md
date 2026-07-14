@@ -85,9 +85,12 @@ writing code, from an up-to-date `main`:
 - Standalone change (CI, deps, tooling, docs, hotfix): `<type>/<slug>`, Conventional type +
   kebab-case slug (e.g. `ci/golangci-lint-workflow`).
 
-One branch = one logical unit of work. Every change reaches `main` only via a PR that is
-approved (pr-reviewer addressed + CI green + quality gates passing); delete the branch after
-merge. Use the `start-task` skill to get on the right branch.
+One branch = one logical unit of work. Before pushing the branch or opening a PR, run the
+`pr-reviewer` agent against the local diff (`git diff main...HEAD`) and fix blocking
+findings — the PR should already be clean when it opens, not fixed up after with a
+follow-up commit. Every change reaches `main` only via a PR that is approved (CI green +
+quality gates passing); delete the branch after merge. Use the `start-task` skill to get on
+the right branch.
 
 ## Project skills (`.claude/skills/`)
 
@@ -97,8 +100,8 @@ merge. Use the `start-task` skill to get on the right branch.
   handling, context, errgroup concurrency, slog, constructors, golangci-lint compliance.
 - `/write-go-tests` — write behavior-focused tests: table-driven + testify, uber-go/mock
   generated mocks, testcontainers Postgres, LLM golden fixtures, >=80% usecase/domain.
-- `/commit` — craft Conventional Commits with architecture-aligned scopes and the required
-  Co-Authored-By trailer; commit only when asked, on a task branch (never `main`).
+- `/commit` — craft Conventional Commits with architecture-aligned scopes and no AI/co-author
+  attribution; commit only when asked, on a task branch (never `main`).
 
 These are also model-invocable: they load automatically when their task comes up.
 
@@ -106,9 +109,13 @@ These are also model-invocable: they load automatically when their task comes up
 
 - `pr-reviewer` — read-only senior review of a diff/PR against the constitution, Clean
   Architecture layer rules, contract-first OpenAPI, Go best practices, and test rigor, with
-  a focus on flagging unnecessary/dead code. Invoke before opening or merging a PR.
+  a focus on flagging unnecessary/dead code. Run it on the branch diff before opening a PR
+  (not after) and fix blocking findings first.
 
 ## Sprint status
 
-Phase 1, Sprint 1 (Foundation): repo + specify init done. Next: constitution, then
-golangci-lint config, lefthook, commitlint, minimal CI. See HANDOFF.md section 12.
+Phase 1: Sprint 1 (Foundation) and Sprint 2 (Contract: openapi codegen wiring, goose
+migrations) done. Sprint 3 (LLM abstraction: domain entities, Anthropic/Groq adapters,
+env-based factory) done. Next: Sprint 4 — GenerateVariations use case (errgroup fan-out
+over the LLMProvider port) + scraper (chromedp/colly) + AnalyzeSite use case. See
+HANDOFF.md section 12.
