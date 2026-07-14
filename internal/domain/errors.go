@@ -22,4 +22,19 @@ var (
 	// ErrEmptyScrape indicates a Scraper could not extract meaningful content
 	// from a URL.
 	ErrEmptyScrape = errors.New("scrape produced no usable content")
+
+	// ErrSiteUnreachable indicates a Scraper call failed for any reason (a
+	// network failure, a non-2xx response, ErrEmptyScrape, ...). AnalyzeSite
+	// wraps every scrape failure with this sentinel in addition to the
+	// underlying cause, so callers that only care about "the target site
+	// could not be fetched or parsed" (e.g. the HTTP layer choosing a status
+	// code) can check for it with errors.Is without needing to know every
+	// concrete failure mode a Scraper implementation might produce.
+	ErrSiteUnreachable = errors.New("could not fetch or parse the target site")
+
+	// ErrInvalidInput indicates a use case's input failed validation before
+	// any external call (LLM, scraper, repository) was attempted. Lives in
+	// domain, not usecase, so adapters (e.g. the HTTP layer mapping errors to
+	// status codes) can classify it via errors.Is without importing usecase.
+	ErrInvalidInput = errors.New("invalid input")
 )

@@ -51,56 +51,56 @@ func TestAnalyzeSite_Execute(t *testing.T) {
 			name:    "empty url is rejected before any call",
 			url:     "",
 			setup:   func(scraper *mockdomain.MockScraper, provider *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name:    "malformed url is rejected before any call",
 			url:     "http://[::1",
 			setup:   func(scraper *mockdomain.MockScraper, provider *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name:    "non-http(s) scheme is rejected before any call",
 			url:     "ftp://example.com/file",
 			setup:   func(scraper *mockdomain.MockScraper, provider *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name:    "url with no host is rejected before any call",
 			url:     "http://",
 			setup:   func(scraper *mockdomain.MockScraper, provider *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name:    "localhost is rejected before any call",
 			url:     "http://localhost:8080/admin",
 			setup:   func(scraper *mockdomain.MockScraper, provider *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name:    "a localhost subdomain is rejected before any call",
 			url:     "http://internal.localhost/",
 			setup:   func(scraper *mockdomain.MockScraper, provider *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name:    "a loopback IP literal is rejected before any call",
 			url:     "http://127.0.0.1/",
 			setup:   func(scraper *mockdomain.MockScraper, provider *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name:    "a private-range IP literal is rejected before any call",
 			url:     "http://10.0.0.5/",
 			setup:   func(scraper *mockdomain.MockScraper, provider *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name: "the cloud metadata link-local IP literal is rejected before any call",
 			url:  "http://169.254.169.254/latest/meta-data/",
 			setup: func(scraper *mockdomain.MockScraper, provider *mockdomain.MockLLMProvider) {
 			},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name: "scraper failure short-circuits classification",
@@ -148,6 +148,29 @@ func TestAnalyzeSite_Execute(t *testing.T) {
 			assert.Equal(t, fixtureAnalyzedProfile, *got)
 		})
 	}
+}
+
+func TestAnalyzeSite_Execute_ScraperFailureIsClassifiedUnreachable(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	scraper := mockdomain.NewMockScraper(ctrl)
+	provider := mockdomain.NewMockLLMProvider(ctrl)
+
+	scraper.EXPECT().
+		Scrape(gomock.Any(), "https://example.com").
+		Return(nil, errScrapeBoom)
+
+	uc := usecase.NewAnalyzeSite(scraper, provider)
+	_, err := uc.Execute(context.Background(), "https://example.com")
+
+	// Both the concrete scraper failure and the domain-level classification
+	// must be discoverable: callers that only know about the underlying
+	// scraper error (tests) and callers that only know about the shared HTTP
+	// classification (the httpapi layer, mapping this to a 502) both need
+	// errors.Is to succeed.
+	require.ErrorIs(t, err, errScrapeBoom)
+	require.ErrorIs(t, err, domain.ErrSiteUnreachable)
 }
 
 func TestAnalyzeSite_Execute_PropagatesContext(t *testing.T) {

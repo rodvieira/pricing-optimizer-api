@@ -97,7 +97,7 @@ func TestGenerateVariations_Execute(t *testing.T) {
 				Currency:    "USD",
 			},
 			setup:   func(m *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name: "more than three strategies is rejected before any provider call",
@@ -109,7 +109,7 @@ func TestGenerateVariations_Execute(t *testing.T) {
 				Currency: "USD",
 			},
 			setup:   func(m *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name: "duplicate strategy is rejected before any provider call",
@@ -119,7 +119,7 @@ func TestGenerateVariations_Execute(t *testing.T) {
 				Currency:    "USD",
 			},
 			setup:   func(m *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 		{
 			name: "unknown strategy is rejected before any provider call",
@@ -129,7 +129,7 @@ func TestGenerateVariations_Execute(t *testing.T) {
 				Currency:    "USD",
 			},
 			setup:   func(m *mockdomain.MockLLMProvider) {},
-			wantErr: usecase.ErrInvalidInput,
+			wantErr: domain.ErrInvalidInput,
 		},
 	}
 

@@ -31,7 +31,7 @@ func (uc *AnalyzeSite) Execute(ctx context.Context, rawURL string) (*domain.Site
 
 	page, err := uc.scraper.Scrape(ctx, rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("analyze site: scrape %s: %w", rawURL, err)
+		return nil, fmt.Errorf("analyze site: scrape %s: %w: %w", rawURL, domain.ErrSiteUnreachable, err)
 	}
 
 	profile, err := uc.provider.ClassifySite(ctx, *page)
@@ -56,26 +56,26 @@ func (uc *AnalyzeSite) Execute(ctx context.Context, rawURL string) (*domain.Site
 // this use case.
 func validateAnalyzeURL(rawURL string) error {
 	if rawURL == "" {
-		return fmt.Errorf("%w: url is required", ErrInvalidInput)
+		return fmt.Errorf("%w: url is required", domain.ErrInvalidInput)
 	}
 
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("%w: %q is not a valid url", ErrInvalidInput, rawURL)
+		return fmt.Errorf("%w: %q is not a valid url", domain.ErrInvalidInput, rawURL)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("%w: url scheme must be http or https, got %q", ErrInvalidInput, u.Scheme)
+		return fmt.Errorf("%w: url scheme must be http or https, got %q", domain.ErrInvalidInput, u.Scheme)
 	}
 
 	host := u.Hostname()
 	if host == "" {
-		return fmt.Errorf("%w: url is missing a host", ErrInvalidInput)
+		return fmt.Errorf("%w: url is missing a host", domain.ErrInvalidInput)
 	}
 	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
-		return fmt.Errorf("%w: localhost is not an analyzable host", ErrInvalidInput)
+		return fmt.Errorf("%w: localhost is not an analyzable host", domain.ErrInvalidInput)
 	}
 	if ip := net.ParseIP(host); ip != nil && isDisallowedIP(ip) {
-		return fmt.Errorf("%w: url host %s is not a publicly analyzable address", ErrInvalidInput, host)
+		return fmt.Errorf("%w: url host %s is not a publicly analyzable address", domain.ErrInvalidInput, host)
 	}
 	return nil
 }
