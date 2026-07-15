@@ -12,6 +12,9 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/redis/go-redis/v9"
+
+	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/cache"
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/httpapi"
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/llm"
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/repository"
@@ -56,9 +59,14 @@ func run() error {
 	generateVariations := usecase.NewGenerateVariations(llmProvider, generationRepo)
 	exportVariation := usecase.NewExportVariation(generationRepo)
 
+	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+	rateLimiter := cache.NewRedisRateLimiter(redisClient, cfg.RateLimitRequests, cfg.RateLimitWindow)
+
 	srv := &http.Server{
-		Addr:              ":" + strconv.Itoa(cfg.Port),
-		Handler:           httpapi.NewRouter(httpapi.NewServer(analyzeSite, generateVariations, generationRepo, exportVariation)),
+		Addr: ":" + strconv.Itoa(cfg.Port),
+		Handler: httpapi.NewRouter(httpapi.NewServer(
+			analyzeSite, generateVariations, generationRepo, exportVariation, rateLimiter,
+		)),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

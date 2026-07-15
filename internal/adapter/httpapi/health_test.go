@@ -42,7 +42,7 @@ func TestHealthEndpoint(t *testing.T) {
 
 	// analyzer is nil: this test only exercises /v1/healthz, which never
 	// touches it.
-	router := NewRouter(NewServer(nil, nil, nil, nil))
+	router := NewRouter(NewServer(nil, nil, nil, nil, nil))
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -111,7 +111,7 @@ func TestAnalyzeSite(t *testing.T) {
 			mockAnalyzer := mockhttpapi.NewMockanalyzer(ctrl)
 			tt.setup(mockAnalyzer)
 
-			router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil))
+			router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil))
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()
@@ -144,6 +144,32 @@ func TestAnalyzeSite(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSite_RateLimited(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	limiter := mockhttpapi.NewMockrateLimiter(ctrl)
+	// Asserting the exact key (not gomock.Any()) proves the client IP
+	// actually flows router middleware -> checkRateLimit -> Allow, not just
+	// that some key was passed.
+	limiter.EXPECT().Allow(gomock.Any(), "203.0.113.7").Return(false, 30*time.Second, nil)
+
+	// analyzer is nil: if the handler ever reached past the rate limit
+	// check, calling Execute on a nil interface would panic, so this
+	// doubles as proof the request never got that far.
+	router := NewRouter(NewServer(nil, nil, nil, nil, limiter))
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
+		bytes.NewBufferString(`{"url":"https://example.com"}`))
+	req.RemoteAddr = "203.0.113.7:54321"
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	assert.Equal(t, "30", rec.Header().Get("Retry-After"))
+}
+
 func TestAnalyzeSite_OmitsPricePositionWhenEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -153,7 +179,7 @@ func TestAnalyzeSite_OmitsPricePositionWhenEmpty(t *testing.T) {
 	profile.Audience.PricePosition = ""
 	mockAnalyzer.EXPECT().Execute(gomock.Any(), "https://example.com").Return(&profile, nil)
 
-	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
@@ -179,7 +205,7 @@ func TestAnalyzeSite_OmitsKeywordsWhenEmpty(t *testing.T) {
 	profile.Keywords = nil
 	mockAnalyzer.EXPECT().Execute(gomock.Any(), "https://example.com").Return(&profile, nil)
 
-	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
