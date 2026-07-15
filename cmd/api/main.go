@@ -14,6 +14,7 @@ import (
 
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/httpapi"
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/llm"
+	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/repository"
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/scraper"
 	"github.com/rodvieira/pricing-optimizer-api/internal/config"
 	"github.com/rodvieira/pricing-optimizer-api/internal/usecase"
@@ -51,10 +52,12 @@ func run() error {
 	)
 
 	analyzeSite := usecase.NewAnalyzeSite(siteScraper, llmProvider)
+	generationRepo := repository.NewInMemoryGenerationRepo()
+	generateVariations := usecase.NewGenerateVariations(llmProvider, generationRepo)
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
-		Handler:           httpapi.NewRouter(httpapi.NewServer(analyzeSite)),
+		Handler:           httpapi.NewRouter(httpapi.NewServer(analyzeSite, generateVariations)),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
