@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/cache"
@@ -54,12 +55,19 @@ func run() error {
 		scraper.NewChromedpScraper(cfg.ChromeExecPath, cfg.ScraperBrowserTimeout),
 	)
 
+	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("create postgres pool: %w", err)
+	}
+	defer pool.Close()
+	generationRepo := repository.NewPostgresGenerationRepo(pool)
+
 	analyzeSite := usecase.NewAnalyzeSite(siteScraper, llmProvider)
-	generationRepo := repository.NewInMemoryGenerationRepo()
 	generateVariations := usecase.NewGenerateVariations(llmProvider, generationRepo)
 	exportVariation := usecase.NewExportVariation(generationRepo)
 
 	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+	defer redisClient.Close()
 	rateLimiter := cache.NewRedisRateLimiter(redisClient, cfg.RateLimitRequests, cfg.RateLimitWindow)
 
 	srv := &http.Server{
