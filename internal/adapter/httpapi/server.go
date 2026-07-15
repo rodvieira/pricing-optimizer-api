@@ -15,12 +15,14 @@ var Version = "dev"
 type Server struct {
 	api.Unimplemented
 	analyzer analyzer
+	streamer streamer
 }
 
 // NewServer creates the API server implementation. analyzer backs
-// POST /v1/analyze; cmd/api wires in the concrete usecase.AnalyzeSite.
-func NewServer(analyzer analyzer) *Server {
-	return &Server{analyzer: analyzer}
+// POST /v1/analyze (cmd/api wires in the concrete usecase.AnalyzeSite);
+// streamer backs POST /v1/generate (usecase.GenerateVariations).
+func NewServer(analyzer analyzer, streamer streamer) *Server {
+	return &Server{analyzer: analyzer, streamer: streamer}
 }
 
 // HealthCheck reports service liveness for Fly and uptime monitors.
