@@ -49,7 +49,7 @@ func (s *Server) ExportVariation(w http.ResponseWriter, r *http.Request, id open
 		return
 	}
 
-	writeJSON(w, toAPIExportResult(*result))
+	writeJSON(w, r, toAPIExportResult(*result))
 }
 
 // writeExportError maps an ExportVariation.Execute error to the RFC 7807
@@ -63,7 +63,7 @@ func writeExportError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrGenerationNotFound), errors.Is(err, domain.ErrVariationNotFound):
 		writeProblem(w, r, http.StatusNotFound, "generation or variation not found", "")
 	default:
-		slog.Error("export variation failed", "error", err)
+		slog.ErrorContext(r.Context(), "export variation failed", "error", err)
 		writeProblem(w, r, http.StatusInternalServerError, "could not export the variation", "")
 	}
 }

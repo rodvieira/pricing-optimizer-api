@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5/middleware"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rodvieira/pricing-optimizer-api/internal/api"
 )
@@ -14,17 +15,20 @@ import (
 // writeJSON writes v as a 200 OK JSON response. Every handler that succeeds
 // synchronously (the SSE stream in generate.go is the one exception) reports
 // success this way, so there is no separate status parameter to get wrong.
-func writeJSON(w http.ResponseWriter, v any) {
+func writeJSON(w http.ResponseWriter, r *http.Request, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("encode json response", "error", err)
+		slog.ErrorContext(r.Context(), "encode json response", "error", err)
 	}
 }
 
-// writeProblem writes an RFC 7807 problem+json response. traceId is taken
-// from chi's request id middleware as a stand-in correlation id until real
-// OpenTelemetry trace_id propagation lands (issue #4, Sprint 6).
+// writeProblem writes an RFC 7807 problem+json response. traceId prefers
+// the real OpenTelemetry trace id from r's active span (set by the
+// otelhttp.NewHandler wrapping the whole router); when tracing is disabled
+// (telemetry.Init installed the noop TracerProvider, so the span context is
+// invalid) it falls back to chi's request id middleware as a correlation id
+// that's still unique per request, just not an OTel trace_id.
 func writeProblem(w http.ResponseWriter, r *http.Request, status int, title, detail string) {
 	problem := api.Problem{
 		Status: status,
@@ -33,13 +37,16 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, title, det
 	if detail != "" {
 		problem.Detail = &detail
 	}
-	if reqID := middleware.GetReqID(r.Context()); reqID != "" {
+	if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+		traceID := sc.TraceID().String()
+		problem.TraceId = &traceID
+	} else if reqID := middleware.GetReqID(r.Context()); reqID != "" {
 		problem.TraceId = &reqID
 	}
 
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(problem); err != nil {
-		slog.Error("encode problem response", "error", err)
+		slog.ErrorContext(r.Context(), "encode problem response", "error", err)
 	}
 }

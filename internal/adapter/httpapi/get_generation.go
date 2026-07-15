@@ -30,7 +30,7 @@ func (s *Server) GetGeneration(w http.ResponseWriter, r *http.Request, id openap
 		return
 	}
 
-	writeJSON(w, toAPIGeneration(*gen))
+	writeJSON(w, r, toAPIGeneration(*gen))
 }
 
 // writeGetGenerationError maps a GenerationRepo.Get error to the RFC 7807
@@ -40,7 +40,7 @@ func writeGetGenerationError(w http.ResponseWriter, r *http.Request, err error) 
 	case errors.Is(err, domain.ErrGenerationNotFound):
 		writeProblem(w, r, http.StatusNotFound, "generation not found", "")
 	default:
-		slog.Error("get generation failed", "error", err)
+		slog.ErrorContext(r.Context(), "get generation failed", "error", err)
 		writeProblem(w, r, http.StatusInternalServerError, "could not fetch the generation", "")
 	}
 }
