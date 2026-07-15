@@ -33,6 +33,10 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, 10*time.Second, cfg.ScraperStaticTimeout)
 				assert.Equal(t, 20*time.Second, cfg.ScraperBrowserTimeout)
 				assert.Empty(t, cfg.ChromeExecPath)
+				assert.Equal(t, "localhost:6379", cfg.RedisAddr)
+				assert.Empty(t, cfg.RedisPassword)
+				assert.Equal(t, 10, cfg.RateLimitRequests)
+				assert.Equal(t, time.Minute, cfg.RateLimitWindow)
 			},
 		},
 		{
@@ -93,6 +97,30 @@ func TestLoad(t *testing.T) {
 			assert: func(t *testing.T, cfg Config) {
 				t.Helper()
 				assert.Equal(t, "/usr/bin/google-chrome-stable", cfg.ChromeExecPath)
+			},
+		},
+		{
+			name:    "non-positive rate limit requests is rejected",
+			env:     map[string]string{"RATE_LIMIT_REQUESTS": "0"},
+			wantErr: "invalid RATE_LIMIT_REQUESTS",
+		},
+		{
+			name:    "non-positive rate limit window is rejected",
+			env:     map[string]string{"RATE_LIMIT_WINDOW": "-1s"},
+			wantErr: "invalid RATE_LIMIT_WINDOW",
+		},
+		{
+			name: "redis and rate limit overrides are applied",
+			env: map[string]string{
+				"REDIS_ADDR": "redis.internal:6380", "REDIS_PASSWORD": "secret",
+				"RATE_LIMIT_REQUESTS": "5", "RATE_LIMIT_WINDOW": "30s",
+			},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.Equal(t, "redis.internal:6380", cfg.RedisAddr)
+				assert.Equal(t, "secret", cfg.RedisPassword)
+				assert.Equal(t, 5, cfg.RateLimitRequests)
+				assert.Equal(t, 30*time.Second, cfg.RateLimitWindow)
 			},
 		},
 	}
