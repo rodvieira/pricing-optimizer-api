@@ -14,6 +14,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace/noop"
+	"go.uber.org/mock/gomock"
+
+	"github.com/rodvieira/pricing-optimizer-api/internal/domain"
+	mockhttpapi "github.com/rodvieira/pricing-optimizer-api/test/mocks/httpapi"
 )
 
 // withRecordingTracerProvider installs a real TracerProvider backed by an
@@ -47,6 +51,28 @@ func TestNewRouter_CreatesOneSpanPerRequest(t *testing.T) {
 	require.Len(t, spans, 1, "one request must produce exactly one otelhttp span")
 	assert.Equal(t, "GET /v1/healthz", spans[0].Name())
 	assert.True(t, spans[0].SpanContext().IsValid())
+}
+
+func TestNewRouter_RenamesSpanToLowCardinalityRoutePattern(t *testing.T) {
+	// Not t.Parallel(): mutates the process-global TracerProvider.
+	recorder := withRecordingTracerProvider(t)
+
+	ctrl := gomock.NewController(t)
+	mockGetter := mockhttpapi.NewMockgenerationGetter(ctrl)
+	mockGetter.EXPECT().Get(gomock.Any(), gomock.Any()).Return(nil, domain.ErrGenerationNotFound)
+
+	router := NewRouter(NewServer(nil, nil, mockGetter, nil, nil))
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/v1/generations/4f9e1c2b-1111-1111-1111-111111111111", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	spans := recorder.Ended()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "GET /v1/generations/{id}", spans[0].Name(),
+		"the span must be renamed to the route template, not the raw per-id path")
 }
 
 func TestWriteProblem_UsesRealTraceIDWhenASpanIsActive(t *testing.T) {
