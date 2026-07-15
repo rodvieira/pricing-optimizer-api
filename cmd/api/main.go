@@ -66,13 +66,19 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("build llm provider: %w", err)
 	}
+	llmProvider = llm.NewTracingProvider(llmProvider, cfg.LLMProvider)
 
 	siteScraper := scraper.NewFallbackScraper(
 		scraper.NewCollyScraper(cfg.ScraperStaticTimeout),
 		scraper.NewChromedpScraper(cfg.ChromeExecPath, cfg.ScraperBrowserTimeout),
 	)
 
-	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("parse postgres pool config: %w", err)
+	}
+	poolCfg.ConnConfig.Tracer = repository.NewQueryTracer()
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)
 	if err != nil {
 		return fmt.Errorf("create postgres pool: %w", err)
 	}
