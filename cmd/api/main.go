@@ -21,11 +21,12 @@ import (
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/repository"
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/scraper"
 	"github.com/rodvieira/pricing-optimizer-api/internal/config"
+	"github.com/rodvieira/pricing-optimizer-api/internal/telemetry"
 	"github.com/rodvieira/pricing-optimizer-api/internal/usecase"
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	slog.SetDefault(slog.New(telemetry.NewSlogHandler(slog.NewJSONHandler(os.Stdout, nil))))
 
 	if err := run(); err != nil {
 		slog.Error("server terminated", "error", err)
@@ -38,6 +39,22 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+
+	shutdownTelemetry, err := telemetry.Init(context.Background(), telemetry.Config{
+		ServiceName:    "pricing-optimizer-api",
+		ServiceVersion: httpapi.Version,
+		Endpoint:       cfg.OTELExporterEndpoint,
+	})
+	if err != nil {
+		return fmt.Errorf("init telemetry: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		if err := shutdownTelemetry(shutdownCtx); err != nil {
+			slog.Error("telemetry shutdown failed", "error", err)
+		}
+	}()
 
 	llmProvider, err := llm.NewProvider(llm.Config{
 		Provider:        cfg.LLMProvider,
