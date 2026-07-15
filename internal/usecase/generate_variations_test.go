@@ -102,66 +102,18 @@ func eventTypes(events []domain.GenerationEvent) []domain.GenerationEventType {
 	return types
 }
 
-func TestGenerateVariationsInput_Validate(t *testing.T) {
+// TestGenerateVariationsInput_IsDomainAlias is a smoke test that
+// usecase.GenerateVariationsInput (declared as `type GenerateVariationsInput
+// = domain.GenerateVariationsInput`, a type alias, not a redefinition) gives
+// this package's callers Validate() and every other method for free. The
+// full behavior table for Validate lives in domain, where the type is
+// actually defined.
+func TestGenerateVariationsInput_IsDomainAlias(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name string
-		in   usecase.GenerateVariationsInput
-	}{
-		{
-			name: "missing site profile url is rejected",
-			in: usecase.GenerateVariationsInput{
-				SiteProfile: domain.SiteProfile{},
-				Strategies:  []domain.PricingStrategy{domain.StrategyAnchor},
-				Currency:    "USD",
-			},
-		},
-		{
-			name: "no strategies is rejected",
-			in: usecase.GenerateVariationsInput{
-				SiteProfile: fixtureSiteProfile(),
-				Strategies:  nil,
-				Currency:    "USD",
-			},
-		},
-		{
-			name: "more than three strategies is rejected",
-			in: usecase.GenerateVariationsInput{
-				SiteProfile: fixtureSiteProfile(),
-				Strategies: []domain.PricingStrategy{
-					domain.StrategyAnchor, domain.StrategyFreemium, domain.StrategyValueBased, domain.StrategyAnchor,
-				},
-				Currency: "USD",
-			},
-		},
-		{
-			name: "duplicate strategy is rejected",
-			in: usecase.GenerateVariationsInput{
-				SiteProfile: fixtureSiteProfile(),
-				Strategies:  []domain.PricingStrategy{domain.StrategyAnchor, domain.StrategyAnchor},
-				Currency:    "USD",
-			},
-		},
-		{
-			name: "unknown strategy is rejected",
-			in: usecase.GenerateVariationsInput{
-				SiteProfile: fixtureSiteProfile(),
-				Strategies:  []domain.PricingStrategy{"bogus"},
-				Currency:    "USD",
-			},
-		},
-	}
+	err := usecase.GenerateVariationsInput{}.Validate()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			err := tt.in.Validate()
-
-			require.ErrorIs(t, err, domain.ErrInvalidInput)
-		})
-	}
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
 }
 
 func TestGenerateVariations_Execute_RejectsInvalidInputBeforeAnyCall(t *testing.T) {

@@ -11,47 +11,12 @@ import (
 	"github.com/rodvieira/pricing-optimizer-api/internal/domain"
 )
 
-const (
-	minStrategies = 1
-	maxStrategies = 3
-)
-
-// GenerateVariationsInput is the POST /v1/generate request the
-// GenerateVariations use case fans out into one LLMProvider.StreamStructured
-// call per strategy. Defaulting an omitted Strategies list to all three
-// strategies, per the openapi.yaml contract, is the HTTP layer's job, not
-// this use case's: Execute always requires an already-resolved 1-3 list.
-// There is no separate source-URL field: the Generation's SourceURL is
-// SiteProfile.URL, since that's the only URL the GenerateRequest contract
-// carries (via the SiteProfile the client got from a prior /v1/analyze call).
-type GenerateVariationsInput struct {
-	SiteProfile domain.SiteProfile
-	Strategies  []domain.PricingStrategy
-	Currency    string
-}
-
-// Validate checks the invariants this use case needs before spending any LLM
-// calls: 1-3 known strategies, no duplicates.
-func (in GenerateVariationsInput) Validate() error {
-	if in.SiteProfile.URL == "" {
-		return fmt.Errorf("%w: site profile url is required", domain.ErrInvalidInput)
-	}
-	if len(in.Strategies) < minStrategies || len(in.Strategies) > maxStrategies {
-		return fmt.Errorf("%w: must request %d-%d strategies, got %d",
-			domain.ErrInvalidInput, minStrategies, maxStrategies, len(in.Strategies))
-	}
-	seen := make(map[domain.PricingStrategy]struct{}, len(in.Strategies))
-	for _, s := range in.Strategies {
-		if !s.Valid() {
-			return fmt.Errorf("%w: invalid strategy %q", domain.ErrInvalidInput, s)
-		}
-		if _, dup := seen[s]; dup {
-			return fmt.Errorf("%w: duplicate strategy %q", domain.ErrInvalidInput, s)
-		}
-		seen[s] = struct{}{}
-	}
-	return nil
-}
+// GenerateVariationsInput is domain.GenerateVariationsInput. Aliased (not
+// redefined) so every existing caller/test can keep writing
+// usecase.GenerateVariationsInput, while the real type lives in domain: the
+// POST /v1/generate HTTP handler needs to construct one and reference it in
+// its own consumer-defined interface, and adapters may never import usecase.
+type GenerateVariationsInput = domain.GenerateVariationsInput
 
 // GenerateVariations orchestrates streaming generation across the requested
 // pricing strategies: it creates and persists a Generation, fans out one
