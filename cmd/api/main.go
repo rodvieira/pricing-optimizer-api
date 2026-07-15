@@ -59,6 +59,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create postgres pool: %w", err)
 	}
+	defer pool.Close()
 	generationRepo := repository.NewPostgresGenerationRepo(pool)
 
 	analyzeSite := usecase.NewAnalyzeSite(siteScraper, llmProvider)
@@ -66,6 +67,7 @@ func run() error {
 	exportVariation := usecase.NewExportVariation(generationRepo)
 
 	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+	defer redisClient.Close()
 	rateLimiter := cache.NewRedisRateLimiter(redisClient, cfg.RateLimitRequests, cfg.RateLimitWindow)
 
 	srv := &http.Server{
