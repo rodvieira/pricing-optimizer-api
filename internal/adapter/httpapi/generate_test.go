@@ -386,6 +386,42 @@ func TestGenerateVariations_FullMapping(t *testing.T) {
 	assert.Equal(t, "Contact us", price["customLabel"])
 }
 
+func TestGenerateVariations_NilFeaturesMarshalsAsEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockStreamer := mockhttpapi.NewMockstreamer(ctrl)
+
+	v := fixtureFullVariation()
+	v.Tiers[0].Features = nil
+	events := make(chan domain.GenerationEvent, 1)
+	events <- domain.GenerationEvent{Type: domain.GenerationEventVariationCompleted, Variation: &v}
+	close(events)
+	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
+
+	router := NewRouter(NewServer(nil, mockStreamer))
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	frames := sseFrames(t, rec.Body.String())
+	require.Len(t, frames, 1)
+	variation, ok := frames[0]["variation"].(map[string]any)
+	require.True(t, ok)
+	tiers, ok := variation["tiers"].([]any)
+	require.True(t, ok)
+	require.Len(t, tiers, 1)
+	tier, ok := tiers[0].(map[string]any)
+	require.True(t, ok)
+
+	features, ok := tier["features"].([]any)
+	require.True(t, ok, "features must marshal as [] not null for a required array field")
+	assert.Empty(t, features)
+}
+
 func TestGenerateVariations_InvalidVariationIDFallsBackToNilUUID(t *testing.T) {
 	t.Parallel()
 

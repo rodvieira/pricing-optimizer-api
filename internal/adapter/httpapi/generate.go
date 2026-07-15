@@ -217,9 +217,8 @@ func toAPIStreamChunk(ev domain.GenerationEvent) api.StreamChunk {
 		chunk.Variation = &v
 	}
 	if ev.Generation != nil {
-		if id, err := uuid.Parse(ev.Generation.ID); err == nil {
-			chunk.GenerationId = &id
-		}
+		id := parseUUID(ev.Generation.ID)
+		chunk.GenerationId = &id
 		g := toAPIGeneration(*ev.Generation)
 		chunk.Generation = &g
 	}
@@ -279,9 +278,13 @@ func toAPIVariation(v domain.Variation) api.Variation {
 }
 
 func toAPIPricingTier(t domain.PricingTier) api.PricingTier {
+	features := t.Features
+	if features == nil {
+		features = []string{} // Features is a required (non-omitempty) array; must never marshal as null.
+	}
 	out := api.PricingTier{
 		Name:     t.Name,
-		Features: t.Features,
+		Features: features,
 		Price:    toAPIPrice(t.Price),
 	}
 	if t.Tagline != "" {
