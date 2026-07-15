@@ -71,7 +71,7 @@ func writeGenerateError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrInvalidInput):
 		writeProblem(w, r, http.StatusUnprocessableEntity, "invalid generate request", err.Error())
 	default:
-		slog.Error("generate variations failed", "error", err)
+		slog.ErrorContext(r.Context(), "generate variations failed", "error", err)
 		writeProblem(w, r, http.StatusInternalServerError, "could not start generation", "")
 	}
 }
@@ -139,14 +139,14 @@ func fromAPISiteProfile(p api.SiteProfile) domain.SiteProfile {
 func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.GenerationEvent) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		slog.Error("generate variations: response writer does not support flushing")
+		slog.ErrorContext(r.Context(), "generate variations: response writer does not support flushing")
 		writeProblem(w, r, http.StatusInternalServerError, "could not stream the response", "")
 		return
 	}
 	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
 		// Not fatal: some ResponseWriters (notably httptest's) don't support
 		// deadlines. Real net/http connections do.
-		slog.Warn("generate variations: could not disable write deadline", "error", err)
+		slog.WarnContext(r.Context(), "generate variations: could not disable write deadline", "error", err)
 	}
 
 	headerWritten := false
@@ -157,7 +157,7 @@ func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.Gene
 				return
 			}
 			if ev.Type == domain.GenerationEventError && ev.Err != nil {
-				slog.Error("generate variations: stream error", "error", ev.Err, "strategy", ev.Strategy)
+				slog.ErrorContext(r.Context(), "generate variations: stream error", "error", ev.Err, "strategy", ev.Strategy)
 			}
 
 			chunk := toAPIStreamChunk(ev)
@@ -166,7 +166,7 @@ func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.Gene
 				headerWritten = true
 			}
 			if err := writeSSEFrame(w, chunk); err != nil {
-				slog.Error("generate variations: write sse frame", "error", err)
+				slog.ErrorContext(r.Context(), "generate variations: write sse frame", "error", err)
 				return
 			}
 			flusher.Flush()

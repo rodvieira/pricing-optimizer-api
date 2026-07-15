@@ -42,7 +42,7 @@ func checkRateLimit(w http.ResponseWriter, r *http.Request, limiter rateLimiter)
 		// Not fatal: a rateLimiter is expected to fail open on its own
 		// (cache.RedisRateLimiter does), so reaching here at all already
 		// means the caller is being let through despite the failure.
-		slog.Warn("rate limit check failed, allowing the request", "error", err)
+		slog.WarnContext(r.Context(), "rate limit check failed, allowing the request", "error", err)
 		return true
 	}
 	if !allowed {

@@ -38,8 +38,8 @@ func NewServer(analyzer analyzer, streamer streamer, generations generationGette
 
 // HealthCheck reports service liveness for Fly and uptime monitors.
 // (GET /v1/healthz)
-func (s *Server) HealthCheck(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, api.HealthStatus{
+func (s *Server) HealthCheck(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, r, api.HealthStatus{
 		Status:  api.HealthStatusStatusOk,
 		Version: Version,
 	})

@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/rodvieira/pricing-optimizer-api/internal/api"
 )
@@ -25,5 +26,17 @@ func NewRouter(srv api.ServerInterface) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 
-	return api.HandlerFromMux(srv, r)
+	// otelhttp wraps everything, including chi's own middleware, so the span
+	// covers the whole request lifecycle (a panic Recoverer catches still
+	// lands inside it). When telemetry.Init installed the noop
+	// TracerProvider (no OTLP endpoint configured), otel.Tracer() returns a
+	// tracer that produces invalid span contexts — this handler still runs
+	// exactly the same, just without a real trace_id downstream.
+	return otelhttp.NewHandler(
+		api.HandlerFromMux(srv, r),
+		"http.server",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	)
 }

@@ -46,7 +46,7 @@ func (s *Server) AnalyzeSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, toAPISiteProfile(*profile))
+	writeJSON(w, r, toAPISiteProfile(*profile))
 }
 
 // writeAnalyzeError maps an AnalyzeSite.Execute error to the RFC 7807
@@ -60,13 +60,13 @@ func writeAnalyzeError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrInvalidInput):
 		writeProblem(w, r, http.StatusUnprocessableEntity, "invalid analyze request", err.Error())
 	case errors.Is(err, domain.ErrSiteUnreachable):
-		slog.Error("analyze site: target unreachable", "error", err)
+		slog.ErrorContext(r.Context(), "analyze site: target unreachable", "error", err)
 		writeProblem(w, r, http.StatusBadGateway, "could not fetch or parse the target site", "")
 	default:
 		// ErrProviderUnavailable, ErrProviderUnauthorized, ErrInvalidLLMResponse,
 		// and anything unclassified are all our dependency's fault, not the
 		// caller's: the contract has no more specific status for them.
-		slog.Error("analyze site failed", "error", err)
+		slog.ErrorContext(r.Context(), "analyze site failed", "error", err)
 		writeProblem(w, r, http.StatusInternalServerError, "could not analyze the site", "")
 	}
 }
