@@ -18,6 +18,7 @@ type Server struct {
 	streamer    streamer
 	generations generationGetter
 	exporter    exporter
+	rateLimiter rateLimiter
 }
 
 // NewServer creates the API server implementation. analyzer backs
@@ -25,9 +26,14 @@ type Server struct {
 // streamer backs POST /v1/generate (usecase.GenerateVariations); generations
 // backs GET /v1/generations/{id} (the same domain.GenerationRepo streamer's
 // use case saves through); exporter backs POST /v1/export/{id}
-// (usecase.ExportVariation).
-func NewServer(analyzer analyzer, streamer streamer, generations generationGetter, exporter exporter) *Server {
-	return &Server{analyzer: analyzer, streamer: streamer, generations: generations, exporter: exporter}
+// (usecase.ExportVariation); rateLimiter guards the two endpoints
+// openapi.yaml documents a 429 for (cache.RedisRateLimiter). A nil
+// rateLimiter always allows, see checkRateLimit.
+func NewServer(analyzer analyzer, streamer streamer, generations generationGetter, exporter exporter, rateLimiter rateLimiter) *Server {
+	return &Server{
+		analyzer: analyzer, streamer: streamer, generations: generations,
+		exporter: exporter, rateLimiter: rateLimiter,
+	}
 }
 
 // HealthCheck reports service liveness for Fly and uptime monitors.

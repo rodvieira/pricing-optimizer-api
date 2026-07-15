@@ -120,7 +120,7 @@ func TestExportVariation(t *testing.T) {
 			mockExporter := mockhttpapi.NewMockexporter(ctrl)
 			tt.setup(mockExporter)
 
-			router := NewRouter(NewServer(nil, nil, nil, mockExporter))
+			router := NewRouter(NewServer(nil, nil, nil, mockExporter, nil))
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost,
 				"/v1/export/"+exportGenerationID, bytes.NewBufferString(tt.body))

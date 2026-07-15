@@ -41,6 +41,10 @@ type streamer interface {
 
 // GenerateVariations implements api.ServerInterface. (POST /v1/generate)
 func (s *Server) GenerateVariations(w http.ResponseWriter, r *http.Request, _ api.GenerateVariationsParams) {
+	if !checkRateLimit(w, r, s.rateLimiter) {
+		return
+	}
+
 	var req api.GenerateRequest
 	body := http.MaxBytesReader(w, r.Body, maxGenerateBodyBytes)
 	if err := json.NewDecoder(body).Decode(&req); err != nil {

@@ -29,6 +29,10 @@ type analyzer interface {
 
 // AnalyzeSite implements api.ServerInterface. (POST /v1/analyze)
 func (s *Server) AnalyzeSite(w http.ResponseWriter, r *http.Request) {
+	if !checkRateLimit(w, r, s.rateLimiter) {
+		return
+	}
+
 	var req api.AnalyzeRequest
 	body := http.MaxBytesReader(w, r.Body, maxAnalyzeBodyBytes)
 	if err := json.NewDecoder(body).Decode(&req); err != nil {

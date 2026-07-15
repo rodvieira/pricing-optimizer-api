@@ -91,7 +91,7 @@ func TestGenerateVariations_Streams(t *testing.T) {
 
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
 	rec := httptest.NewRecorder()
@@ -114,6 +114,27 @@ func TestGenerateVariations_Streams(t *testing.T) {
 	assert.Equal(t, "completed", generation["status"])
 }
 
+func TestGenerateVariations_RateLimited(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	limiter := mockhttpapi.NewMockrateLimiter(ctrl)
+	limiter.EXPECT().Allow(gomock.Any(), gomock.Any()).Return(false, 30*time.Second, nil)
+
+	// streamer is nil: if the handler ever reached past the rate limit
+	// check, calling Execute on a nil interface would panic, so this
+	// doubles as proof the request never got that far.
+	router := NewRouter(NewServer(nil, nil, nil, nil, limiter))
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	assert.Equal(t, "30", rec.Header().Get("Retry-After"))
+}
+
 func TestGenerateVariations_DefaultsStrategiesAndCurrency(t *testing.T) {
 	t.Parallel()
 
@@ -130,7 +151,7 @@ func TestGenerateVariations_DefaultsStrategiesAndCurrency(t *testing.T) {
 			return events, nil
 		})
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil))
 
 	body := `{"siteProfile": {"url": "https://example.com", "title": "Acme", "valueProposition": "x", "industry": "y",
 		"audience": {"segment": "z", "sophistication": "medium"}, "sourceType": "static", "analyzedAt": "2026-07-14T12:00:00Z"}}`
@@ -149,7 +170,7 @@ func TestGenerateVariations_DefaultsStrategiesAndCurrency(t *testing.T) {
 func TestGenerateVariations_MalformedBodyIsBadRequest(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouter(NewServer(nil, nil, nil, nil))
+	router := NewRouter(NewServer(nil, nil, nil, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(`{"siteProfile":`))
 	rec := httptest.NewRecorder()
@@ -193,7 +214,7 @@ func TestGenerateVariations_ExecuteErrors(t *testing.T) {
 			mockStreamer := mockhttpapi.NewMockstreamer(ctrl)
 			mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return(nil, tt.err)
 
-			router := NewRouter(NewServer(nil, mockStreamer, nil, nil))
+			router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil))
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
 			rec := httptest.NewRecorder()
@@ -226,7 +247,7 @@ func TestGenerateVariations_MidStreamErrorEventDoesNotLeak(t *testing.T) {
 	close(events)
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
 	rec := httptest.NewRecorder()
@@ -271,7 +292,7 @@ func TestGenerateVariations_NonFlushingWriterIsAnInternalError(t *testing.T) {
 	close(events)
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
 	w := &nonFlushingWriter{}
@@ -345,7 +366,7 @@ func TestGenerateVariations_FullMapping(t *testing.T) {
 			return events, nil
 		})
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(fullGenerateBody))
 	rec := httptest.NewRecorder()
@@ -399,7 +420,7 @@ func TestGenerateVariations_NilFeaturesMarshalsAsEmptyArray(t *testing.T) {
 	close(events)
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
 	rec := httptest.NewRecorder()
@@ -435,7 +456,7 @@ func TestGenerateVariations_InvalidVariationIDFallsBackToNilUUID(t *testing.T) {
 	close(events)
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
 	rec := httptest.NewRecorder()
@@ -461,7 +482,7 @@ func TestGenerateVariations_ClosesOnClientDisconnect(t *testing.T) {
 	gen := fixtureGeneration()
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
