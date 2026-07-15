@@ -53,6 +53,13 @@ type Config struct {
 	// connects with: Neon in production (per HANDOFF.md's $0/month
 	// constraint), a local container in development.
 	DatabaseURL string `env:"DATABASE_URL" envDefault:"postgres://postgres:postgres@localhost:5432/pricing?sslmode=disable"`
+
+	// OTELExporterEndpoint gates OpenTelemetry export: empty (the default,
+	// no collector/Grafana Cloud provisioned yet — that's Sprint 7) means
+	// tracing is a no-op. When set, telemetry.Init reads the rest of the
+	// standard OTEL_EXPORTER_OTLP_* env vars itself; this field only
+	// decides on/off. See ADR-0007.
+	OTELExporterEndpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:""`
 }
 
 // Load reads and validates the configuration from the environment.

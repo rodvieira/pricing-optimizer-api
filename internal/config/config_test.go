@@ -38,6 +38,7 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, 10, cfg.RateLimitRequests)
 				assert.Equal(t, time.Minute, cfg.RateLimitWindow)
 				assert.Equal(t, "postgres://postgres:postgres@localhost:5432/pricing?sslmode=disable", cfg.DatabaseURL)
+				assert.Empty(t, cfg.OTELExporterEndpoint)
 			},
 		},
 		{
@@ -130,6 +131,14 @@ func TestLoad(t *testing.T) {
 			assert: func(t *testing.T, cfg Config) {
 				t.Helper()
 				assert.Equal(t, "postgres://user:pass@neon.example/pricing", cfg.DatabaseURL)
+			},
+		},
+		{
+			name: "otel exporter endpoint override is applied",
+			env:  map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "https://otlp.example.com:4318"},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.Equal(t, "https://otlp.example.com:4318", cfg.OTELExporterEndpoint)
 			},
 		},
 	}
