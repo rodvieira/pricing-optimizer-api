@@ -7,6 +7,8 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -31,10 +33,16 @@ type Config struct {
 // Init installs the global TracerProvider per cfg and returns a shutdown
 // func to flush pending spans and release exporter resources on exit.
 func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error, err error) {
-	if cfg.Endpoint == "" {
+	// The signal-specific OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is a legitimate
+	// way to configure the exporter without setting the general
+	// OTEL_EXPORTER_OTLP_ENDPOINT cfg.Endpoint reads; check it too so the
+	// on/off gate agrees with what otlptracehttp itself considers "configured".
+	if cfg.Endpoint == "" && os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") == "" {
+		slog.Info("telemetry disabled: no OTLP endpoint configured")
 		otel.SetTracerProvider(noop.NewTracerProvider())
 		return func(context.Context) error { return nil }, nil
 	}
+	slog.Info("telemetry enabled: exporting via OTLP/HTTP")
 
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
