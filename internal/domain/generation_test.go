@@ -1,77 +1,30 @@
 package domain
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-)
-
-func TestGenerationInput_Validate(t *testing.T) {
+func TestGenerationStatus_Valid(t *testing.T) {
 	t.Parallel()
 
-	valid := func() GenerationInput {
-		return GenerationInput{
-			SiteProfile: SiteProfile{URL: "https://example.com"},
-			Strategy:    StrategyFreemium,
-			Currency:    "USD",
-		}
-	}
-
 	tests := []struct {
-		name       string
-		mutate     func(in *GenerationInput)
-		wantErrMsg string
+		name string
+		s    GenerationStatus
+		want bool
 	}{
-		{
-			name:   "valid input passes",
-			mutate: func(in *GenerationInput) {},
-		},
-		{
-			name: "invalid strategy is rejected",
-			mutate: func(in *GenerationInput) {
-				in.Strategy = "bogo"
-			},
-			wantErrMsg: "invalid strategy",
-		},
-		{
-			name: "missing site url is rejected",
-			mutate: func(in *GenerationInput) {
-				in.SiteProfile.URL = ""
-			},
-			wantErrMsg: "site profile url is required",
-		},
-		{
-			name: "lowercase currency is rejected",
-			mutate: func(in *GenerationInput) {
-				in.Currency = "usd"
-			},
-			wantErrMsg: "invalid currency",
-		},
-		{
-			name: "empty currency is rejected",
-			mutate: func(in *GenerationInput) {
-				in.Currency = ""
-			},
-			wantErrMsg: "invalid currency",
-		},
+		{name: "pending is valid", s: GenerationStatusPending, want: true},
+		{name: "streaming is valid", s: GenerationStatusStreaming, want: true},
+		{name: "completed is valid", s: GenerationStatusCompleted, want: true},
+		{name: "failed is valid", s: GenerationStatusFailed, want: true},
+		{name: "empty string is invalid", s: "", want: false},
+		{name: "unknown status is invalid", s: "queued", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			in := valid()
-			tt.mutate(&in)
-
-			err := in.Validate()
-
-			if tt.wantErrMsg != "" {
-				require.ErrorIs(t, err, ErrInvalidGenerationInput)
-				assert.Contains(t, err.Error(), tt.wantErrMsg)
-				return
+			if got := tt.s.Valid(); got != tt.want {
+				t.Errorf("GenerationStatus(%q).Valid() = %v, want %v", tt.s, got, tt.want)
 			}
-			assert.NoError(t, err)
 		})
 	}
 }

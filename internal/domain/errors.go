@@ -37,4 +37,7 @@ var (
 	// domain, not usecase, so adapters (e.g. the HTTP layer mapping errors to
 	// status codes) can classify it via errors.Is without importing usecase.
 	ErrInvalidInput = errors.New("invalid input")
+
+	// ErrGenerationNotFound indicates no Generation exists for a given id.
+	ErrGenerationNotFound = errors.New("generation not found")
 )
