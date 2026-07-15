@@ -72,13 +72,17 @@ func NewGenerateVariations(provider domain.LLMProvider, repo domain.GenerationRe
 // Execute validates in, creates and saves a Generation in the streaming
 // state, then returns a channel of GenerationEvent that emits progress as
 // each requested strategy's variation is generated. The channel closes after
-// exactly one terminal event: GenerationEventDone (all strategies succeeded)
-// or GenerationEventError (at least one failed, or the completed Generation
-// could not be saved).
+// at most one terminal event: GenerationEventDone (every strategy
+// succeeded) or GenerationEventError (at least one strategy failed, ctx was
+// canceled before every strategy finished, or the terminal Generation could
+// not be saved).
 //
-// Canceling ctx stops event delivery: the returned channel closes without a
-// terminal event once every fan-out goroutine has observed the cancellation,
-// same as an early-disconnecting SSE client would expect.
+// Canceling ctx stops event delivery to the caller (the returned channel
+// closes, typically without a terminal event reaching an already-gone
+// consumer), but the Generation is still saved as failed through a context
+// that outlives ctx — an early-disconnecting SSE client must not leave the
+// record stuck in "streaming" or, worse, incorrectly marked completed with
+// partial variations.
 func (uc *GenerateVariations) Execute(
 	ctx context.Context, in GenerateVariationsInput,
 ) (<-chan domain.GenerationEvent, error) {
@@ -119,7 +123,8 @@ func (uc *GenerateVariations) run(
 		}
 	}
 
-	if !send(domain.GenerationEvent{Type: domain.GenerationEventStarted, Generation: &gen}) {
+	started := gen
+	if !send(domain.GenerationEvent{Type: domain.GenerationEventStarted, Generation: &started}) {
 		return
 	}
 
@@ -152,26 +157,44 @@ func (uc *GenerateVariations) run(
 	}
 	wg.Wait()
 
-	if firstErr != nil {
+	// A canceled ctx (the client disconnected) must count as a failure even
+	// though no strategy goroutine necessarily recorded one: the adapters'
+	// StreamStructured implementations stop silently on ctx.Done() rather
+	// than emitting a StreamChunkError, so firstErr alone cannot be trusted
+	// to reflect "every strategy actually completed."
+	switch {
+	case ctx.Err() != nil:
+		if firstErr == nil {
+			firstErr = ctx.Err()
+		}
 		gen.Status = domain.GenerationStatusFailed
-	} else {
+	case firstErr != nil:
+		gen.Status = domain.GenerationStatusFailed
+	default:
 		gen.Status = domain.GenerationStatusCompleted
 		gen.Variations = variations
 	}
 
-	if err := uc.repo.Save(ctx, gen); err != nil {
+	// Persist the terminal state through a context that outlives ctx: a
+	// disconnected client must not prevent the correct failed/completed
+	// status from being saved, or the record is left stuck in "streaming"
+	// forever (or, worse, silently marked completed with partial data).
+	saveCtx := context.WithoutCancel(ctx)
+	if err := uc.repo.Save(saveCtx, gen); err != nil {
 		send(domain.GenerationEvent{
 			Type: domain.GenerationEventError,
-			Err:  fmt.Errorf("save completed generation: %w", err),
+			Err:  fmt.Errorf("save %s generation: %w", gen.Status, err),
 		})
 		return
 	}
 
 	if firstErr != nil {
-		send(domain.GenerationEvent{Type: domain.GenerationEventError, Err: firstErr, Generation: &gen})
+		failed := gen
+		send(domain.GenerationEvent{Type: domain.GenerationEventError, Err: firstErr, Generation: &failed})
 		return
 	}
-	send(domain.GenerationEvent{Type: domain.GenerationEventDone, Generation: &gen})
+	done := gen
+	send(domain.GenerationEvent{Type: domain.GenerationEventDone, Generation: &done})
 }
 
 // streamStrategy runs one strategy's StreamStructured call and relays its

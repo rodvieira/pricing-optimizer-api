@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -388,7 +389,19 @@ func TestGenerateVariations_Execute_ClosesOnContextCancellation(t *testing.T) {
 	provider := mockdomain.NewMockLLMProvider(ctrl)
 	repo := mockdomain.NewMockGenerationRepo(ctrl)
 
-	repo.EXPECT().Save(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	var (
+		mu      sync.Mutex
+		saved   []domain.Generation
+		saveCtx []context.Context
+	)
+	repo.EXPECT().Save(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
+		func(ctx context.Context, g domain.Generation) error {
+			mu.Lock()
+			defer mu.Unlock()
+			saved = append(saved, g)
+			saveCtx = append(saveCtx, ctx)
+			return nil
+		})
 
 	block := make(chan domain.StreamChunk)
 	provider.EXPECT().
@@ -425,14 +438,28 @@ func TestGenerateVariations_Execute_ClosesOnContextCancellation(t *testing.T) {
 	cancel()
 
 	deadline := time.After(2 * time.Second)
+drain:
 	for {
 		select {
 		case _, ok := <-ch:
 			if !ok {
-				return
+				break drain
 			}
 		case <-deadline:
 			t.Fatal("channel did not close after context cancellation; goroutine leaked")
 		}
 	}
+
+	// The adapters' real StreamStructured implementations stop silently on
+	// ctx.Done() rather than emitting a StreamChunkError, so the use case
+	// must derive "failed" from ctx.Err() itself, not only from firstErr —
+	// otherwise this would be persisted as a lying "completed" with empty
+	// variations. It must also survive being saved: a canceled ctx must not
+	// stop the terminal state from reaching the repo.
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, saved, 2, "expected an initial streaming save and a terminal save")
+	assert.Equal(t, domain.GenerationStatusFailed, saved[1].Status)
+	assert.Empty(t, saved[1].Variations)
+	assert.NoError(t, saveCtx[1].Err(), "the terminal save must use a context that outlives the canceled request context")
 }
