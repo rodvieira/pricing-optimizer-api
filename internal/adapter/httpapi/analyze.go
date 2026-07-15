@@ -42,7 +42,7 @@ func (s *Server) AnalyzeSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toAPISiteProfile(*profile))
+	writeJSON(w, toAPISiteProfile(*profile))
 }
 
 // writeAnalyzeError maps an AnalyzeSite.Execute error to the RFC 7807

@@ -30,7 +30,7 @@ func (s *Server) GetGeneration(w http.ResponseWriter, r *http.Request, id openap
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toAPIGeneration(*gen))
+	writeJSON(w, toAPIGeneration(*gen))
 }
 
 // writeGetGenerationError maps a GenerationRepo.Get error to the RFC 7807
