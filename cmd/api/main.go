@@ -54,10 +54,11 @@ func run() error {
 	analyzeSite := usecase.NewAnalyzeSite(siteScraper, llmProvider)
 	generationRepo := repository.NewInMemoryGenerationRepo()
 	generateVariations := usecase.NewGenerateVariations(llmProvider, generationRepo)
+	exportVariation := usecase.NewExportVariation(generationRepo)
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
-		Handler:           httpapi.NewRouter(httpapi.NewServer(analyzeSite, generateVariations, generationRepo)),
+		Handler:           httpapi.NewRouter(httpapi.NewServer(analyzeSite, generateVariations, generationRepo, exportVariation)),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

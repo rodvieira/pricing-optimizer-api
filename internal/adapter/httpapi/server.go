@@ -17,21 +17,23 @@ type Server struct {
 	analyzer    analyzer
 	streamer    streamer
 	generations generationGetter
+	exporter    exporter
 }
 
 // NewServer creates the API server implementation. analyzer backs
 // POST /v1/analyze (cmd/api wires in the concrete usecase.AnalyzeSite);
 // streamer backs POST /v1/generate (usecase.GenerateVariations); generations
 // backs GET /v1/generations/{id} (the same domain.GenerationRepo streamer's
-// use case saves through).
-func NewServer(analyzer analyzer, streamer streamer, generations generationGetter) *Server {
-	return &Server{analyzer: analyzer, streamer: streamer, generations: generations}
+// use case saves through); exporter backs POST /v1/export/{id}
+// (usecase.ExportVariation).
+func NewServer(analyzer analyzer, streamer streamer, generations generationGetter, exporter exporter) *Server {
+	return &Server{analyzer: analyzer, streamer: streamer, generations: generations, exporter: exporter}
 }
 
 // HealthCheck reports service liveness for Fly and uptime monitors.
 // (GET /v1/healthz)
 func (s *Server) HealthCheck(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, api.HealthStatus{
+	writeJSON(w, api.HealthStatus{
 		Status:  api.HealthStatusStatusOk,
 		Version: Version,
 	})

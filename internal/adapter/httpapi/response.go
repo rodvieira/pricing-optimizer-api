@@ -11,10 +11,12 @@ import (
 	"github.com/rodvieira/pricing-optimizer-api/internal/api"
 )
 
-// writeJSON writes v as a JSON response with the given status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
+// writeJSON writes v as a 200 OK JSON response. Every handler that succeeds
+// synchronously (the SSE stream in generate.go is the one exception) reports
+// success this way, so there is no separate status parameter to get wrong.
+func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Error("encode json response", "error", err)
 	}
