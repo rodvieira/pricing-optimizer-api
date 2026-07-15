@@ -124,3 +124,56 @@ func (mr *MockScraperMockRecorder) Scrape(ctx, url any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Scrape", reflect.TypeOf((*MockScraper)(nil).Scrape), ctx, url)
 }
+
+// MockGenerationRepo is a mock of GenerationRepo interface.
+type MockGenerationRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockGenerationRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockGenerationRepoMockRecorder is the mock recorder for MockGenerationRepo.
+type MockGenerationRepoMockRecorder struct {
+	mock *MockGenerationRepo
+}
+
+// NewMockGenerationRepo creates a new mock instance.
+func NewMockGenerationRepo(ctrl *gomock.Controller) *MockGenerationRepo {
+	mock := &MockGenerationRepo{ctrl: ctrl}
+	mock.recorder = &MockGenerationRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockGenerationRepo) EXPECT() *MockGenerationRepoMockRecorder {
+	return m.recorder
+}
+
+// Get mocks base method.
+func (m *MockGenerationRepo) Get(ctx context.Context, id string) (*domain.Generation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", ctx, id)
+	ret0, _ := ret[0].(*domain.Generation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockGenerationRepoMockRecorder) Get(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockGenerationRepo)(nil).Get), ctx, id)
+}
+
+// Save mocks base method.
+func (m *MockGenerationRepo) Save(ctx context.Context, g domain.Generation) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Save", ctx, g)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Save indicates an expected call of Save.
+func (mr *MockGenerationRepoMockRecorder) Save(ctx, g any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Save", reflect.TypeOf((*MockGenerationRepo)(nil).Save), ctx, g)
+}

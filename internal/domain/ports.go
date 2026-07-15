@@ -33,3 +33,17 @@ type LLMProvider interface {
 type Scraper interface {
 	Scrape(ctx context.Context, url string) (*ScrapedPage, error)
 }
+
+// GenerationRepo persists and retrieves Generation records created by
+// POST /v1/generate, so GET /v1/generations/{id} and POST /v1/export/{id}
+// can find them again. Selected by cmd/api's wiring; no use case knows the
+// concrete implementation (an in-memory store ahead of Sprint 6's
+// Postgres/sqlc-backed one, then the reverse).
+type GenerationRepo interface {
+	// Save creates or overwrites the Generation at g.ID.
+	Save(ctx context.Context, g Generation) error
+
+	// Get fetches the Generation with the given id. Returns
+	// ErrGenerationNotFound if none exists.
+	Get(ctx context.Context, id string) (*Generation, error)
+}

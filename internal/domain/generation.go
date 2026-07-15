@@ -1,34 +1,38 @@
 package domain
 
-import (
-	"fmt"
-	"regexp"
+import "time"
+
+// GenerationStatus is the lifecycle state of a Generation.
+type GenerationStatus string
+
+const (
+	GenerationStatusPending   GenerationStatus = "pending"
+	GenerationStatusStreaming GenerationStatus = "streaming"
+	GenerationStatusCompleted GenerationStatus = "completed"
+	GenerationStatusFailed    GenerationStatus = "failed"
 )
 
-var currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
-
-// GenerationInput is a single LLMProvider call: one site profile, one
-// strategy. It is deliberately narrower than the multi-strategy /v1/generate
-// API request — the use case that orchestrates parallel generation fans that
-// request out into one GenerationInput per requested strategy.
-type GenerationInput struct {
-	SiteProfile SiteProfile
-	Strategy    PricingStrategy
-	Currency    string
+// Valid reports whether s is one of the known generation statuses.
+func (s GenerationStatus) Valid() bool {
+	switch s {
+	case GenerationStatusPending, GenerationStatusStreaming, GenerationStatusCompleted, GenerationStatusFailed:
+		return true
+	default:
+		return false
+	}
 }
 
-// Validate checks the invariants an LLMProvider is entitled to assume about
-// its input before spending an API call on it.
-func (in GenerationInput) Validate() error {
-	if !in.Strategy.Valid() {
-		return fmt.Errorf("%w: invalid strategy %q", ErrInvalidGenerationInput, in.Strategy)
-	}
-	if in.SiteProfile.URL == "" {
-		return fmt.Errorf("%w: site profile url is required", ErrInvalidGenerationInput)
-	}
-	if !currencyPattern.MatchString(in.Currency) {
-		return fmt.Errorf("%w: invalid currency %q: must be a 3-letter ISO 4217 code",
-			ErrInvalidGenerationInput, in.Currency)
-	}
-	return nil
+// Generation is the persisted record of one POST /v1/generate call: the
+// source URL and site profile it was generated from, its variations (empty
+// until Status reaches completed), and when it was created. Created by the
+// use case that orchestrates streaming generation, saved via GenerationRepo,
+// and later fetched by GET /v1/generations/{id} or referenced by
+// POST /v1/export/{id}.
+type Generation struct {
+	ID          string
+	SourceURL   string
+	SiteProfile SiteProfile
+	Status      GenerationStatus
+	Variations  []Variation
+	CreatedAt   time.Time
 }
