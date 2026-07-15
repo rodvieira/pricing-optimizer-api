@@ -40,4 +40,8 @@ var (
 
 	// ErrGenerationNotFound indicates no Generation exists for a given id.
 	ErrGenerationNotFound = errors.New("generation not found")
+
+	// ErrVariationNotFound indicates a Generation exists but none of its
+	// Variations match the requested id.
+	ErrVariationNotFound = errors.New("variation not found")
 )
