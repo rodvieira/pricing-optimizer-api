@@ -35,6 +35,19 @@ type Config struct {
 	ScraperStaticTimeout  time.Duration `env:"SCRAPER_STATIC_TIMEOUT" envDefault:"10s"`
 	ScraperBrowserTimeout time.Duration `env:"SCRAPER_BROWSER_TIMEOUT" envDefault:"20s"`
 	ChromeExecPath        string        `env:"CHROME_EXEC_PATH" envDefault:""`
+
+	// RedisAddr/RedisPassword point at the rate limiter's backing Redis:
+	// Upstash in production (per HANDOFF.md's $0/month constraint), a local
+	// container in development. RedisPassword is empty for a local Redis
+	// with no AUTH configured.
+	RedisAddr     string `env:"REDIS_ADDR" envDefault:"localhost:6379"`
+	RedisPassword string `env:"REDIS_PASSWORD" envDefault:""`
+
+	// RateLimitRequests is how many calls a single client (identified by IP)
+	// may make to a rate-limited endpoint (/v1/analyze, /v1/generate — the
+	// two that spend LLM/scraper budget) per RateLimitWindow, fixed-window.
+	RateLimitRequests int           `env:"RATE_LIMIT_REQUESTS" envDefault:"10"`
+	RateLimitWindow   time.Duration `env:"RATE_LIMIT_WINDOW" envDefault:"1m"`
 }
 
 // Load reads and validates the configuration from the environment.
@@ -71,6 +84,12 @@ func (c Config) validate() error {
 	}
 	if c.ScraperBrowserTimeout <= 0 {
 		return fmt.Errorf("invalid SCRAPER_BROWSER_TIMEOUT %s: must be positive", c.ScraperBrowserTimeout)
+	}
+	if c.RateLimitRequests <= 0 {
+		return fmt.Errorf("invalid RATE_LIMIT_REQUESTS %d: must be positive", c.RateLimitRequests)
+	}
+	if c.RateLimitWindow <= 0 {
+		return fmt.Errorf("invalid RATE_LIMIT_WINDOW %s: must be positive", c.RateLimitWindow)
 	}
 	return nil
 }
