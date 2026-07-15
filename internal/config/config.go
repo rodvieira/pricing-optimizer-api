@@ -48,6 +48,11 @@ type Config struct {
 	// two that spend LLM/scraper budget) per RateLimitWindow, fixed-window.
 	RateLimitRequests int           `env:"RATE_LIMIT_REQUESTS" envDefault:"10"`
 	RateLimitWindow   time.Duration `env:"RATE_LIMIT_WINDOW" envDefault:"1m"`
+
+	// DatabaseURL is the pgx connection string PostgresGenerationRepo
+	// connects with: Neon in production (per HANDOFF.md's $0/month
+	// constraint), a local container in development.
+	DatabaseURL string `env:"DATABASE_URL" envDefault:"postgres://postgres:postgres@localhost:5432/pricing?sslmode=disable"`
 }
 
 // Load reads and validates the configuration from the environment.

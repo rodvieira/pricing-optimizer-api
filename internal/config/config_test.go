@@ -37,6 +37,7 @@ func TestLoad(t *testing.T) {
 				assert.Empty(t, cfg.RedisPassword)
 				assert.Equal(t, 10, cfg.RateLimitRequests)
 				assert.Equal(t, time.Minute, cfg.RateLimitWindow)
+				assert.Equal(t, "postgres://postgres:postgres@localhost:5432/pricing?sslmode=disable", cfg.DatabaseURL)
 			},
 		},
 		{
@@ -121,6 +122,14 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, "secret", cfg.RedisPassword)
 				assert.Equal(t, 5, cfg.RateLimitRequests)
 				assert.Equal(t, 30*time.Second, cfg.RateLimitWindow)
+			},
+		},
+		{
+			name: "database url override is applied",
+			env:  map[string]string{"DATABASE_URL": "postgres://user:pass@neon.example/pricing"},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.Equal(t, "postgres://user:pass@neon.example/pricing", cfg.DatabaseURL)
 			},
 		},
 	}
