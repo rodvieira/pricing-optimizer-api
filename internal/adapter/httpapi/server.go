@@ -14,15 +14,18 @@ var Version = "dev"
 // fall through to api.Unimplemented, which responds with 501 Not Implemented.
 type Server struct {
 	api.Unimplemented
-	analyzer analyzer
-	streamer streamer
+	analyzer    analyzer
+	streamer    streamer
+	generations generationGetter
 }
 
 // NewServer creates the API server implementation. analyzer backs
 // POST /v1/analyze (cmd/api wires in the concrete usecase.AnalyzeSite);
-// streamer backs POST /v1/generate (usecase.GenerateVariations).
-func NewServer(analyzer analyzer, streamer streamer) *Server {
-	return &Server{analyzer: analyzer, streamer: streamer}
+// streamer backs POST /v1/generate (usecase.GenerateVariations); generations
+// backs GET /v1/generations/{id} (the same domain.GenerationRepo streamer's
+// use case saves through).
+func NewServer(analyzer analyzer, streamer streamer, generations generationGetter) *Server {
+	return &Server{analyzer: analyzer, streamer: streamer, generations: generations}
 }
 
 // HealthCheck reports service liveness for Fly and uptime monitors.

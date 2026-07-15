@@ -57,7 +57,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
-		Handler:           httpapi.NewRouter(httpapi.NewServer(analyzeSite, generateVariations)),
+		Handler:           httpapi.NewRouter(httpapi.NewServer(analyzeSite, generateVariations, generationRepo)),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
