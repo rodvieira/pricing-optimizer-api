@@ -6,14 +6,15 @@ import (
 	"github.com/rodvieira/pricing-optimizer-api/internal/domain"
 )
 
-// currencySymbols covers the handful of currencies the analyze/generate
-// pipeline is expected to see; anything else falls back to its ISO code.
+// currencySymbols covers currencies whose minor unit is 1/100th of the
+// major one, matching Price.AmountMinorUnits' own "e.g. cents" assumption;
+// anything else (including zero-decimal currencies like JPY, which this
+// package does not attempt to format correctly) falls back to its ISO code.
 var currencySymbols = map[string]string{
 	"USD": "$",
 	"EUR": "€",
 	"GBP": "£",
 	"BRL": "R$",
-	"JPY": "¥",
 }
 
 // formatPrice renders p as a short display string for the JSX/HTML exports,
