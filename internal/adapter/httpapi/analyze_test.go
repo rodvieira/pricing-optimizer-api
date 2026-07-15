@@ -111,7 +111,7 @@ func TestAnalyzeSite(t *testing.T) {
 			mockAnalyzer := mockhttpapi.NewMockanalyzer(ctrl)
 			tt.setup(mockAnalyzer)
 
-			router := NewRouter(NewServer(mockAnalyzer, nil))
+			router := NewRouter(NewServer(mockAnalyzer, nil, nil))
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()
@@ -153,7 +153,7 @@ func TestAnalyzeSite_OmitsPricePositionWhenEmpty(t *testing.T) {
 	profile.Audience.PricePosition = ""
 	mockAnalyzer.EXPECT().Execute(gomock.Any(), "https://example.com").Return(&profile, nil)
 
-	router := NewRouter(NewServer(mockAnalyzer, nil))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
@@ -179,7 +179,7 @@ func TestAnalyzeSite_OmitsKeywordsWhenEmpty(t *testing.T) {
 	profile.Keywords = nil
 	mockAnalyzer.EXPECT().Execute(gomock.Any(), "https://example.com").Return(&profile, nil)
 
-	router := NewRouter(NewServer(mockAnalyzer, nil))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
