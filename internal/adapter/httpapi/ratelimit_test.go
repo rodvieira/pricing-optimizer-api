@@ -54,6 +54,15 @@ func TestCheckRateLimit(t *testing.T) {
 			},
 			wantOK: true,
 		},
+		{
+			name: "sub-second retry-after rounds up rather than truncating to 0",
+			setup: func(l *mockhttpapi.MockrateLimiter) {
+				l.EXPECT().Allow(gomock.Any(), gomock.Any()).Return(false, 500*time.Millisecond, nil)
+			},
+			wantOK:         false,
+			wantStatus:     http.StatusTooManyRequests,
+			wantRetryAfter: "1",
+		},
 	}
 
 	for _, tt := range tests {

@@ -39,11 +39,23 @@ func checkRateLimit(w http.ResponseWriter, r *http.Request, limiter rateLimiter)
 
 	allowed, retryAfter, err := limiter.Allow(r.Context(), middleware.GetClientIP(r.Context()))
 	if err != nil {
-		slog.Error("rate limit check failed, allowing the request", "error", err)
+		// Not fatal: a rateLimiter is expected to fail open on its own
+		// (cache.RedisRateLimiter does), so reaching here at all already
+		// means the caller is being let through despite the failure.
+		slog.Warn("rate limit check failed, allowing the request", "error", err)
 		return true
 	}
 	if !allowed {
-		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+		// Retry-After is documented as whole seconds; ceil rather than
+		// truncate so a sub-second remainder never rounds down to 0 and
+		// tells a rejected caller to retry immediately. The only current
+		// rateLimiter implementation already returns whole seconds, but the
+		// interface doesn't promise that, so this handler doesn't rely on it.
+		retryAfterSeconds := int(retryAfter.Seconds())
+		if retryAfter%time.Second != 0 {
+			retryAfterSeconds++
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
 		writeProblem(w, r, http.StatusTooManyRequests, "rate limit exceeded", "")
 		return false
 	}
