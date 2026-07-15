@@ -2,6 +2,8 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -51,56 +53,80 @@ func validGenerateVariationsInput() usecase.GenerateVariationsInput {
 	}
 }
 
-func TestGenerateVariations_Execute(t *testing.T) {
+// chunkChannel returns a closed, pre-filled channel of chunks, mimicking
+// what a real LLMProvider.StreamStructured call returns.
+func chunkChannel(chunks ...domain.StreamChunk) <-chan domain.StreamChunk {
+	ch := make(chan domain.StreamChunk, len(chunks))
+	for _, c := range chunks {
+		ch <- c
+	}
+	close(ch)
+	return ch
+}
+
+func successChunks(strategy domain.PricingStrategy) []domain.StreamChunk {
+	v := fixtureVariation(strategy)
+	return []domain.StreamChunk{
+		{Type: domain.StreamChunkToken, Delta: "Simple"},
+		{Type: domain.StreamChunkToken, Delta: ", transparent pricing"},
+		{Type: domain.StreamChunkVariationCompleted, Variation: v},
+	}
+}
+
+// collect drains ch with a timeout, failing the test if it doesn't close in
+// time (guards against a goroutine leak or deadlock in the use case).
+func collect(t *testing.T, ch <-chan domain.GenerationEvent) []domain.GenerationEvent {
+	t.Helper()
+
+	var events []domain.GenerationEvent
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return events
+			}
+			events = append(events, ev)
+		case <-deadline:
+			t.Fatal("channel did not close before the test deadline; possible goroutine leak")
+			return nil
+		}
+	}
+}
+
+func eventTypes(events []domain.GenerationEvent) []domain.GenerationEventType {
+	types := make([]domain.GenerationEventType, len(events))
+	for i, ev := range events {
+		types[i] = ev.Type
+	}
+	return types
+}
+
+func TestGenerateVariationsInput_Validate(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		in      usecase.GenerateVariationsInput
-		setup   func(m *mockdomain.MockLLMProvider)
-		want    int // number of variations, when no error is expected
-		wantErr error
+		name string
+		in   usecase.GenerateVariationsInput
 	}{
 		{
-			name: "generates one variation per requested strategy",
-			in:   validGenerateVariationsInput(),
-			setup: func(m *mockdomain.MockLLMProvider) {
-				m.EXPECT().
-					GenerateStructured(gomock.Any(), gomock.Any()).
-					DoAndReturn(func(_ context.Context, in domain.GenerationInput) (*domain.Variation, error) {
-						return fixtureVariation(in.Strategy), nil
-					}).
-					Times(2)
+			name: "missing site profile url is rejected",
+			in: usecase.GenerateVariationsInput{
+				SiteProfile: domain.SiteProfile{},
+				Strategies:  []domain.PricingStrategy{domain.StrategyAnchor},
+				Currency:    "USD",
 			},
-			want: 2,
 		},
 		{
-			// Cancellation itself is exercised separately in
-			// TestGenerateVariations_Execute_CancelsSiblingsOnFirstError;
-			// this case only checks that the aggregate error propagates
-			// regardless of how many sibling calls happened to run first.
-			name: "returns the first provider error",
-			in:   validGenerateVariationsInput(),
-			setup: func(m *mockdomain.MockLLMProvider) {
-				m.EXPECT().
-					GenerateStructured(gomock.Any(), gomock.Any()).
-					Return(nil, domain.ErrProviderUnavailable).
-					MinTimes(1)
-			},
-			wantErr: domain.ErrProviderUnavailable,
-		},
-		{
-			name: "no strategies is rejected before any provider call",
+			name: "no strategies is rejected",
 			in: usecase.GenerateVariationsInput{
 				SiteProfile: fixtureSiteProfile(),
 				Strategies:  nil,
 				Currency:    "USD",
 			},
-			setup:   func(m *mockdomain.MockLLMProvider) {},
-			wantErr: domain.ErrInvalidInput,
 		},
 		{
-			name: "more than three strategies is rejected before any provider call",
+			name: "more than three strategies is rejected",
 			in: usecase.GenerateVariationsInput{
 				SiteProfile: fixtureSiteProfile(),
 				Strategies: []domain.PricingStrategy{
@@ -108,28 +134,22 @@ func TestGenerateVariations_Execute(t *testing.T) {
 				},
 				Currency: "USD",
 			},
-			setup:   func(m *mockdomain.MockLLMProvider) {},
-			wantErr: domain.ErrInvalidInput,
 		},
 		{
-			name: "duplicate strategy is rejected before any provider call",
+			name: "duplicate strategy is rejected",
 			in: usecase.GenerateVariationsInput{
 				SiteProfile: fixtureSiteProfile(),
 				Strategies:  []domain.PricingStrategy{domain.StrategyAnchor, domain.StrategyAnchor},
 				Currency:    "USD",
 			},
-			setup:   func(m *mockdomain.MockLLMProvider) {},
-			wantErr: domain.ErrInvalidInput,
 		},
 		{
-			name: "unknown strategy is rejected before any provider call",
+			name: "unknown strategy is rejected",
 			in: usecase.GenerateVariationsInput{
 				SiteProfile: fixtureSiteProfile(),
 				Strategies:  []domain.PricingStrategy{"bogus"},
 				Currency:    "USD",
 			},
-			setup:   func(m *mockdomain.MockLLMProvider) {},
-			wantErr: domain.ErrInvalidInput,
 		},
 	}
 
@@ -137,98 +157,309 @@ func TestGenerateVariations_Execute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctrl := gomock.NewController(t)
-			provider := mockdomain.NewMockLLMProvider(ctrl)
-			tt.setup(provider)
+			err := tt.in.Validate()
 
-			uc := usecase.NewGenerateVariations(provider)
-			got, err := uc.Execute(context.Background(), tt.in)
-
-			if tt.wantErr != nil {
-				require.ErrorIs(t, err, tt.wantErr)
-				assert.Nil(t, got)
-				return
-			}
-			require.NoError(t, err)
-			assert.Len(t, got, tt.want)
-			for i, strategy := range tt.in.Strategies {
-				assert.Equal(t, strategy, got[i].Strategy, "variation at index %d must match its requested strategy", i)
-			}
+			require.ErrorIs(t, err, domain.ErrInvalidInput)
 		})
 	}
 }
 
-func TestGenerateVariations_Execute_PropagatesEachStrategyToItsCall(t *testing.T) {
+func TestGenerateVariations_Execute_RejectsInvalidInputBeforeAnyCall(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	provider := mockdomain.NewMockLLMProvider(ctrl)
+	repo := mockdomain.NewMockGenerationRepo(ctrl)
+
+	uc := usecase.NewGenerateVariations(provider, repo)
+	in := validGenerateVariationsInput()
+	in.Strategies = nil
+
+	_, err := uc.Execute(context.Background(), in)
+
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
+func TestGenerateVariations_Execute_InitialSaveFailureShortCircuits(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	provider := mockdomain.NewMockLLMProvider(ctrl)
+	repo := mockdomain.NewMockGenerationRepo(ctrl)
+
+	saveErr := errors.New("db down")
+	repo.EXPECT().Save(gomock.Any(), gomock.Any()).Return(saveErr)
+
+	uc := usecase.NewGenerateVariations(provider, repo)
+	_, err := uc.Execute(context.Background(), validGenerateVariationsInput())
+
+	require.ErrorIs(t, err, saveErr)
+}
+
+func TestGenerateVariations_Execute_SingleStrategySuccess(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	provider := mockdomain.NewMockLLMProvider(ctrl)
+	repo := mockdomain.NewMockGenerationRepo(ctrl)
+
+	in := usecase.GenerateVariationsInput{
+		SiteProfile: fixtureSiteProfile(),
+		Strategies:  []domain.PricingStrategy{domain.StrategyAnchor},
+		Currency:    "USD",
+	}
+
+	var savedStatuses []domain.GenerationStatus
+	repo.EXPECT().Save(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
+		func(_ context.Context, g domain.Generation) error {
+			savedStatuses = append(savedStatuses, g.Status)
+			return nil
+		})
+	provider.EXPECT().
+		StreamStructured(gomock.Any(), gomock.Any()).
+		Return(chunkChannel(successChunks(domain.StrategyAnchor)...), nil)
+
+	uc := usecase.NewGenerateVariations(provider, repo)
+	ch, err := uc.Execute(context.Background(), in)
+	require.NoError(t, err)
+
+	events := collect(t, ch)
+
+	assert.Equal(t, []domain.GenerationEventType{
+		domain.GenerationEventStarted,
+		domain.GenerationEventVariationStarted,
+		domain.GenerationEventToken,
+		domain.GenerationEventToken,
+		domain.GenerationEventVariationCompleted,
+		domain.GenerationEventDone,
+	}, eventTypes(events))
+
+	done := events[len(events)-1]
+	require.NotNil(t, done.Generation)
+	assert.Equal(t, domain.GenerationStatusCompleted, done.Generation.Status)
+	require.Len(t, done.Generation.Variations, 1)
+	assert.Equal(t, domain.StrategyAnchor, done.Generation.Variations[0].Strategy)
+	assert.Equal(t, in.SiteProfile.URL, done.Generation.SourceURL)
+
+	assert.Equal(t, []domain.GenerationStatus{domain.GenerationStatusStreaming, domain.GenerationStatusCompleted}, savedStatuses)
+}
+
+func TestGenerateVariations_Execute_MultipleStrategiesPreserveOrder(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	provider := mockdomain.NewMockLLMProvider(ctrl)
+	repo := mockdomain.NewMockGenerationRepo(ctrl)
 
 	in := usecase.GenerateVariationsInput{
 		SiteProfile: fixtureSiteProfile(),
 		Strategies:  []domain.PricingStrategy{domain.StrategyAnchor, domain.StrategyFreemium, domain.StrategyValueBased},
-		Currency:    "EUR",
+		Currency:    "USD",
 	}
 
+	repo.EXPECT().Save(gomock.Any(), gomock.Any()).Times(2).Return(nil)
 	provider.EXPECT().
-		GenerateStructured(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, got domain.GenerationInput) (*domain.Variation, error) {
-			assert.Equal(t, in.SiteProfile, got.SiteProfile)
-			assert.Equal(t, in.Currency, got.Currency)
-			assert.True(t, got.Strategy.Valid())
-			return fixtureVariation(got.Strategy), nil
+		StreamStructured(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, genIn domain.GenerationInput) (<-chan domain.StreamChunk, error) {
+			return chunkChannel(successChunks(genIn.Strategy)...), nil
 		}).
 		Times(3)
 
-	uc := usecase.NewGenerateVariations(provider)
-	got, err := uc.Execute(context.Background(), in)
-
+	uc := usecase.NewGenerateVariations(provider, repo)
+	ch, err := uc.Execute(context.Background(), in)
 	require.NoError(t, err)
-	require.Len(t, got, 3)
-	assert.ElementsMatch(t,
-		[]domain.PricingStrategy{domain.StrategyAnchor, domain.StrategyFreemium, domain.StrategyValueBased},
-		[]domain.PricingStrategy{got[0].Strategy, got[1].Strategy, got[2].Strategy},
-	)
+
+	events := collect(t, ch)
+	done := events[len(events)-1]
+	require.Equal(t, domain.GenerationEventDone, done.Type)
+	require.NotNil(t, done.Generation)
+	require.Len(t, done.Generation.Variations, 3)
+
+	// Variations must line up with the requested strategy order (index i),
+	// not with whichever goroutine happened to finish first.
+	for i, strategy := range in.Strategies {
+		assert.Equal(t, strategy, done.Generation.Variations[i].Strategy)
+	}
 }
 
-func TestGenerateVariations_Execute_CancelsSiblingsOnFirstError(t *testing.T) {
+func TestGenerateVariations_Execute_ProviderCallFailureMarksGenerationFailed(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	provider := mockdomain.NewMockLLMProvider(ctrl)
+	repo := mockdomain.NewMockGenerationRepo(ctrl)
 
-	provider.EXPECT().
-		GenerateStructured(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, in domain.GenerationInput) (*domain.Variation, error) {
-			if in.Strategy == domain.StrategyAnchor {
-				return nil, domain.ErrProviderUnavailable
-			}
-			// The sibling call: this only returns because errgroup
-			// canceled the shared context in response to the anchor
-			// call's error. If Execute stopped propagating ctx to each
-			// GenerateStructured call, this would block forever and the
-			// timeout below would catch it.
-			<-ctx.Done()
-			return nil, ctx.Err()
-		}).
-		Times(2)
-
-	uc := usecase.NewGenerateVariations(provider)
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := uc.Execute(context.Background(), usecase.GenerateVariationsInput{
-			SiteProfile: fixtureSiteProfile(),
-			Strategies:  []domain.PricingStrategy{domain.StrategyAnchor, domain.StrategyFreemium},
-			Currency:    "USD",
+	var savedStatuses []domain.GenerationStatus
+	repo.EXPECT().Save(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
+		func(_ context.Context, g domain.Generation) error {
+			savedStatuses = append(savedStatuses, g.Status)
+			return nil
 		})
-		done <- err
-	}()
+	provider.EXPECT().
+		StreamStructured(gomock.Any(), gomock.Any()).
+		Return(nil, domain.ErrProviderUnavailable)
 
-	select {
-	case err := <-done:
-		require.ErrorIs(t, err, domain.ErrProviderUnavailable)
-	case <-time.After(2 * time.Second):
-		t.Fatal("Execute did not return; sibling call was not canceled by the shared context")
+	in := usecase.GenerateVariationsInput{
+		SiteProfile: fixtureSiteProfile(),
+		Strategies:  []domain.PricingStrategy{domain.StrategyAnchor},
+		Currency:    "USD",
 	}
+
+	uc := usecase.NewGenerateVariations(provider, repo)
+	ch, err := uc.Execute(context.Background(), in)
+	require.NoError(t, err)
+
+	events := collect(t, ch)
+	last := events[len(events)-1]
+	assert.Equal(t, domain.GenerationEventError, last.Type)
+	require.NotNil(t, last.Generation)
+	assert.Equal(t, domain.GenerationStatusFailed, last.Generation.Status)
+	assert.Equal(t, []domain.GenerationStatus{domain.GenerationStatusStreaming, domain.GenerationStatusFailed}, savedStatuses)
+}
+
+func TestGenerateVariations_Execute_MidStreamErrorMarksGenerationFailed(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	provider := mockdomain.NewMockLLMProvider(ctrl)
+	repo := mockdomain.NewMockGenerationRepo(ctrl)
+
+	repo.EXPECT().Save(gomock.Any(), gomock.Any()).Times(2).Return(nil)
+	streamErr := errors.New("stream broke")
+	provider.EXPECT().
+		StreamStructured(gomock.Any(), gomock.Any()).
+		Return(chunkChannel(
+			domain.StreamChunk{Type: domain.StreamChunkToken, Delta: "partial"},
+			domain.StreamChunk{Type: domain.StreamChunkError, Err: streamErr},
+		), nil)
+
+	in := usecase.GenerateVariationsInput{
+		SiteProfile: fixtureSiteProfile(),
+		Strategies:  []domain.PricingStrategy{domain.StrategyAnchor},
+		Currency:    "USD",
+	}
+
+	uc := usecase.NewGenerateVariations(provider, repo)
+	ch, err := uc.Execute(context.Background(), in)
+	require.NoError(t, err)
+
+	events := collect(t, ch)
+	assert.Contains(t, eventTypes(events), domain.GenerationEventError)
+	last := events[len(events)-1]
+	require.NotNil(t, last.Generation)
+	assert.Equal(t, domain.GenerationStatusFailed, last.Generation.Status)
+}
+
+func TestGenerateVariations_Execute_FinalSaveFailureEmitsError(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	provider := mockdomain.NewMockLLMProvider(ctrl)
+	repo := mockdomain.NewMockGenerationRepo(ctrl)
+
+	saveErr := errors.New("db down")
+	gomock.InOrder(
+		repo.EXPECT().Save(gomock.Any(), gomock.Any()).Return(nil),
+		repo.EXPECT().Save(gomock.Any(), gomock.Any()).Return(saveErr),
+	)
+	provider.EXPECT().
+		StreamStructured(gomock.Any(), gomock.Any()).
+		Return(chunkChannel(successChunks(domain.StrategyAnchor)...), nil)
+
+	in := usecase.GenerateVariationsInput{
+		SiteProfile: fixtureSiteProfile(),
+		Strategies:  []domain.PricingStrategy{domain.StrategyAnchor},
+		Currency:    "USD",
+	}
+
+	uc := usecase.NewGenerateVariations(provider, repo)
+	ch, err := uc.Execute(context.Background(), in)
+	require.NoError(t, err)
+
+	events := collect(t, ch)
+	last := events[len(events)-1]
+	assert.Equal(t, domain.GenerationEventError, last.Type)
+	require.ErrorIs(t, last.Err, saveErr)
+}
+
+func TestGenerateVariations_Execute_ClosesOnContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	provider := mockdomain.NewMockLLMProvider(ctrl)
+	repo := mockdomain.NewMockGenerationRepo(ctrl)
+
+	var (
+		mu      sync.Mutex
+		saved   []domain.Generation
+		saveCtx []context.Context
+	)
+	repo.EXPECT().Save(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
+		func(ctx context.Context, g domain.Generation) error {
+			mu.Lock()
+			defer mu.Unlock()
+			saved = append(saved, g)
+			saveCtx = append(saveCtx, ctx)
+			return nil
+		})
+
+	block := make(chan domain.StreamChunk)
+	provider.EXPECT().
+		StreamStructured(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ domain.GenerationInput) (<-chan domain.StreamChunk, error) {
+			// Never sends; the real adapters close their channel once ctx is
+			// canceled, so block until then too.
+			go func() {
+				<-ctx.Done()
+				close(block)
+			}()
+			return block, nil
+		})
+
+	in := usecase.GenerateVariationsInput{
+		SiteProfile: fixtureSiteProfile(),
+		Strategies:  []domain.PricingStrategy{domain.StrategyAnchor},
+		Currency:    "USD",
+	}
+
+	uc := usecase.NewGenerateVariations(provider, repo)
+	ctx, cancel := context.WithCancel(context.Background())
+	ch, err := uc.Execute(ctx, in)
+	require.NoError(t, err)
+
+	// Drain the two events the use case can deliver before it blocks inside
+	// StreamStructured's mocked call (generation_started, then
+	// variation_started — the latter's successful send happens-before the
+	// StreamStructured call in streamStrategy, so by the time this returns
+	// the mock is guaranteed to be invoked next), then cancel and confirm
+	// the channel still closes promptly instead of leaking.
+	<-ch
+	<-ch
+	cancel()
+
+	deadline := time.After(2 * time.Second)
+drain:
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				break drain
+			}
+		case <-deadline:
+			t.Fatal("channel did not close after context cancellation; goroutine leaked")
+		}
+	}
+
+	// The adapters' real StreamStructured implementations stop silently on
+	// ctx.Done() rather than emitting a StreamChunkError, so the use case
+	// must derive "failed" from ctx.Err() itself, not only from firstErr —
+	// otherwise this would be persisted as a lying "completed" with empty
+	// variations. It must also survive being saved: a canceled ctx must not
+	// stop the terminal state from reaching the repo.
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, saved, 2, "expected an initial streaming save and a terminal save")
+	assert.Equal(t, domain.GenerationStatusFailed, saved[1].Status)
+	assert.Empty(t, saved[1].Variations)
+	assert.NoError(t, saveCtx[1].Err(), "the terminal save must use a context that outlives the canceled request context")
 }
