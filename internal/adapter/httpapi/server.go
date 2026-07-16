@@ -16,6 +16,7 @@ type Server struct {
 	generations generationGetter
 	exporter    exporter
 	rateLimiter rateLimiter
+	idempotency idempotencyStore
 }
 
 // NewServer creates the API server implementation. analyzer backs
@@ -25,11 +26,17 @@ type Server struct {
 // use case saves through); exporter backs POST /v1/export/{id}
 // (usecase.ExportVariation); rateLimiter guards the two endpoints
 // openapi.yaml documents a 429 for (cache.RedisRateLimiter). A nil
-// rateLimiter always allows, see checkRateLimit.
-func NewServer(analyzer analyzer, streamer streamer, generations generationGetter, exporter exporter, rateLimiter rateLimiter) *Server {
+// rateLimiter always allows, see checkRateLimit. idempotency backs the
+// Idempotency-Key header on POST /v1/generate (cache.RedisIdempotencyStore);
+// a nil idempotency disables the feature entirely (no lookup, no save),
+// same "nil means off" shape as rateLimiter.
+func NewServer(
+	analyzer analyzer, streamer streamer, generations generationGetter, exporter exporter,
+	rateLimiter rateLimiter, idempotency idempotencyStore,
+) *Server {
 	return &Server{
 		analyzer: analyzer, streamer: streamer, generations: generations,
-		exporter: exporter, rateLimiter: rateLimiter,
+		exporter: exporter, rateLimiter: rateLimiter, idempotency: idempotency,
 	}
 }
 

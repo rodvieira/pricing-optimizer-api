@@ -40,7 +40,7 @@ type streamer interface {
 }
 
 // GenerateVariations implements api.ServerInterface. (POST /v1/generate)
-func (s *Server) GenerateVariations(w http.ResponseWriter, r *http.Request, _ api.GenerateVariationsParams) {
+func (s *Server) GenerateVariations(w http.ResponseWriter, r *http.Request, params api.GenerateVariationsParams) {
 	if !checkRateLimit(w, r, s.rateLimiter) {
 		return
 	}
@@ -52,13 +52,22 @@ func (s *Server) GenerateVariations(w http.ResponseWriter, r *http.Request, _ ap
 		return
 	}
 
+	idempotencyKey := ""
+	if s.idempotency != nil && params.IdempotencyKey != nil {
+		idempotencyKey = *params.IdempotencyKey
+	}
+	if !s.checkIdempotency(w, r, idempotencyKey) {
+		return
+	}
+
 	events, err := s.streamer.Execute(r.Context(), toGenerateVariationsInput(req))
 	if err != nil {
+		releaseIdempotencyReservation(r, s.idempotency, idempotencyKey)
 		writeGenerateError(w, r, err)
 		return
 	}
 
-	streamSSE(w, r, events)
+	streamSSE(w, r, events, s.idempotency, idempotencyKey)
 }
 
 // writeGenerateError maps a GenerateVariations.Execute error to the RFC 7807
@@ -136,11 +145,22 @@ func fromAPISiteProfile(p api.SiteProfile) domain.SiteProfile {
 // http.ResponseController: http.Server.WriteTimeout is sized for ordinary
 // request/response handlers and would otherwise cut off a legitimately
 // long-lived stream (three parallel LLM generations can easily exceed it).
-func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.GenerationEvent) {
+//
+// When idempotencyKey is non-empty, the first event's generation ID (always
+// present: it is the same GenerationEventStarted every run emits first) is
+// saved against it via store, so a repeat request with the same key can
+// replay this generation instead of starting a new one. Whenever that save
+// never happens or fails — the stream ends before any event ever arrives
+// (an immediate client disconnect, or a non-flushing ResponseWriter), or
+// the save call itself errors — the reservation checkIdempotency made is
+// released instead of being left stuck at "pending" for the rest of its
+// TTL, which would otherwise wrongly reject a legitimate retry with 409.
+func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.GenerationEvent, store idempotencyStore, idempotencyKey string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		slog.ErrorContext(r.Context(), "generate variations: response writer does not support flushing")
 		writeProblem(w, r, http.StatusInternalServerError, "could not stream the response", "")
+		releaseIdempotencyReservation(r, store, idempotencyKey)
 		return
 	}
 	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
@@ -150,6 +170,20 @@ func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.Gene
 	}
 
 	headerWritten := false
+	// idempotencySaved tracks a strictly narrower thing than headerWritten:
+	// whether the idempotency mapping was actually persisted, not just
+	// whether the SSE header went out. A Save failure must still release
+	// the reservation even though the header (and headerWritten) is already
+	// set by the time Save is attempted — gating the deferred release on
+	// headerWritten alone would leave a reservation stuck at "pending" for
+	// the rest of its TTL on a Save failure, the same bug as an Execute
+	// failure or an empty stream, just triggered later.
+	idempotencySaved := false
+	defer func() {
+		if !idempotencySaved {
+			releaseIdempotencyReservation(r, store, idempotencyKey)
+		}
+	}()
 	for {
 		select {
 		case ev, ok := <-events:
@@ -164,6 +198,7 @@ func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.Gene
 			if !headerWritten {
 				writeSSEHeader(w, chunk.GenerationId)
 				headerWritten = true
+				idempotencySaved = saveIdempotencyMapping(r, store, idempotencyKey, chunk.GenerationId)
 			}
 			if err := writeSSEFrame(w, chunk); err != nil {
 				slog.ErrorContext(r.Context(), "generate variations: write sse frame", "error", err)
@@ -174,6 +209,68 @@ func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.Gene
 			return
 		}
 	}
+}
+
+// idempotencyStoreCallTimeout bounds the detached context
+// releaseIdempotencyReservation and saveIdempotencyMapping issue their store
+// calls with — see releaseIdempotencyReservation's doc comment for why they
+// detach from r.Context() at all.
+const idempotencyStoreCallTimeout = 5 * time.Second
+
+// releaseIdempotencyReservation undoes the reservation checkIdempotency made
+// for idempotencyKey, when non-empty, so a legitimate retry isn't rejected
+// as "still in progress" for the rest of the store's TTL. Called whenever a
+// reservation was made but the generation it was for never reached
+// saveIdempotencyMapping.
+//
+// It issues the Release call against a context detached from r.Context()
+// (mirroring usecase.GenerateVariations.run's saveCtx :=
+// context.WithoutCancel(ctx) for its own terminal Save, for the identical
+// reason): the most common trigger for a release is exactly a client
+// disconnect, which cancels r.Context() first. Passing r.Context() straight
+// through would make the Redis call fail immediately at the connection-pool
+// layer (context canceled before a single byte is sent), silently
+// defeating the whole point — the reservation would never actually be
+// released, and the key would sit stuck for the rest of its TTL regardless
+// of this function having run. Bounded with a short timeout so a genuinely
+// unreachable Redis can't hang request cleanup indefinitely. A release
+// failure is logged, not fatal, same fail-open shape as the rest of this
+// file's idempotency handling.
+func releaseIdempotencyReservation(r *http.Request, store idempotencyStore, idempotencyKey string) {
+	if idempotencyKey == "" {
+		return
+	}
+	detached := context.WithoutCancel(r.Context())
+	ctx, cancel := context.WithTimeout(detached, idempotencyStoreCallTimeout)
+	defer cancel()
+	if err := store.Release(ctx, idempotencyKey); err != nil {
+		slog.WarnContext(r.Context(), "idempotency release failed", "error", err)
+	}
+}
+
+// saveIdempotencyMapping records generationID against idempotencyKey via
+// store, when both are present. Returns false only when a save was actually
+// attempted and failed — the caller must then release the reservation
+// checkIdempotency made rather than leave it stuck at "pending" for the
+// rest of its TTL. Returns true (nothing to release) when there was no
+// idempotencyKey or generationID to save in the first place.
+//
+// Like releaseIdempotencyReservation, it detaches from r.Context() for the
+// same reason: a client disconnecting at the exact moment the first event
+// arrives would otherwise make this Save fail on an already-canceled
+// context, silently losing the mapping.
+func saveIdempotencyMapping(r *http.Request, store idempotencyStore, idempotencyKey string, generationID *uuid.UUID) bool {
+	if idempotencyKey == "" || generationID == nil {
+		return true
+	}
+	detached := context.WithoutCancel(r.Context())
+	ctx, cancel := context.WithTimeout(detached, idempotencyStoreCallTimeout)
+	defer cancel()
+	if err := store.Save(ctx, idempotencyKey, generationID.String()); err != nil {
+		slog.WarnContext(r.Context(), "idempotency save failed", "error", err)
+		return false
+	}
+	return true
 }
 
 // writeSSEHeader writes the response headers and status line exactly once,

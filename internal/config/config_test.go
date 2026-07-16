@@ -37,6 +37,7 @@ func TestLoad(t *testing.T) {
 				assert.Empty(t, cfg.RedisPassword)
 				assert.Equal(t, 10, cfg.RateLimitRequests)
 				assert.Equal(t, time.Minute, cfg.RateLimitWindow)
+				assert.Equal(t, 24*time.Hour, cfg.IdempotencyTTL)
 				assert.Equal(t, "postgres://postgres:postgres@localhost:5432/pricing?sslmode=disable", cfg.DatabaseURL)
 				assert.Empty(t, cfg.OTELExporterEndpoint)
 			},
@@ -110,6 +111,19 @@ func TestLoad(t *testing.T) {
 			name:    "non-positive rate limit window is rejected",
 			env:     map[string]string{"RATE_LIMIT_WINDOW": "-1s"},
 			wantErr: "invalid RATE_LIMIT_WINDOW",
+		},
+		{
+			name:    "non-positive idempotency ttl is rejected",
+			env:     map[string]string{"IDEMPOTENCY_TTL": "0s"},
+			wantErr: "invalid IDEMPOTENCY_TTL",
+		},
+		{
+			name: "idempotency ttl override is applied",
+			env:  map[string]string{"IDEMPOTENCY_TTL": "1h"},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.Equal(t, time.Hour, cfg.IdempotencyTTL)
+			},
 		},
 		{
 			name: "redis and rate limit overrides are applied",
