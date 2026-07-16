@@ -20,6 +20,7 @@ import (
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/llm"
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/repository"
 	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/scraper"
+	"github.com/rodvieira/pricing-optimizer-api/internal/buildinfo"
 	"github.com/rodvieira/pricing-optimizer-api/internal/config"
 	"github.com/rodvieira/pricing-optimizer-api/internal/telemetry"
 	"github.com/rodvieira/pricing-optimizer-api/internal/usecase"
@@ -42,7 +43,7 @@ func run() error {
 
 	shutdownTelemetry, err := telemetry.Init(context.Background(), telemetry.Config{
 		ServiceName:    "pricing-optimizer-api",
-		ServiceVersion: httpapi.Version,
+		ServiceVersion: buildinfo.Version,
 		Endpoint:       cfg.OTELExporterEndpoint,
 	})
 	if err != nil {
@@ -108,7 +109,8 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("http server listening", "addr", srv.Addr, "env", cfg.Env)
+		slog.Info("http server listening", "addr", srv.Addr, "env", cfg.Env,
+			"version", buildinfo.Version, "commit", buildinfo.Commit, "build_time", buildinfo.BuildTime)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 		}

@@ -4,11 +4,8 @@ import (
 	"net/http"
 
 	"github.com/rodvieira/pricing-optimizer-api/internal/api"
+	"github.com/rodvieira/pricing-optimizer-api/internal/buildinfo"
 )
-
-// Version is the build version, overridable at build time via -ldflags.
-// Tracked for relocation into internal/buildinfo (issue #5).
-var Version = "dev"
 
 // Server implements the generated api.ServerInterface. Endpoints not yet built
 // fall through to api.Unimplemented, which responds with 501 Not Implemented.
@@ -41,6 +38,6 @@ func NewServer(analyzer analyzer, streamer streamer, generations generationGette
 func (s *Server) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, api.HealthStatus{
 		Status:  api.HealthStatusStatusOk,
-		Version: Version,
+		Version: buildinfo.Version,
 	})
 }

@@ -1,0 +1,11 @@
+.git
+.github
+.claude
+.specify
+docs
+specs
+*.md
+.env
+.env.example
+bin/
+tmp/
