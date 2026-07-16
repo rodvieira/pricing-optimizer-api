@@ -49,6 +49,13 @@ type Config struct {
 	RateLimitRequests int           `env:"RATE_LIMIT_REQUESTS" envDefault:"10"`
 	RateLimitWindow   time.Duration `env:"RATE_LIMIT_WINDOW" envDefault:"1m"`
 
+	// IdempotencyTTL is how long an Idempotency-Key on POST /v1/generate
+	// stays mapped to its generation: a repeat request with the same key
+	// within this window replays the existing generation instead of
+	// starting a new (LLM-cost-spending) one. 24h covers a client's own
+	// retry window comfortably without keeping keys around indefinitely.
+	IdempotencyTTL time.Duration `env:"IDEMPOTENCY_TTL" envDefault:"24h"`
+
 	// DatabaseURL is the pgx connection string PostgresGenerationRepo
 	// connects with: Neon in production (per HANDOFF.md's $0/month
 	// constraint), a local container in development.
@@ -102,6 +109,9 @@ func (c Config) validate() error {
 	}
 	if c.RateLimitWindow <= 0 {
 		return fmt.Errorf("invalid RATE_LIMIT_WINDOW %s: must be positive", c.RateLimitWindow)
+	}
+	if c.IdempotencyTTL <= 0 {
+		return fmt.Errorf("invalid IDEMPOTENCY_TTL %s: must be positive", c.IdempotencyTTL)
 	}
 	return nil
 }
