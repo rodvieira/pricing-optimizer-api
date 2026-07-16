@@ -21,8 +21,8 @@ info:
 servers:
   - url: http://localhost:8080
     description: Local development
-  - url: https://pricing-optimizer-api.fly.dev
-    description: Production (Fly.io)
+  # Production server (Cloud Run, see ADR-0009) is added here once deployed —
+  # deliberately omitted rather than guessed ahead of the real assigned URL.
 
 tags:
   - name: analysis
