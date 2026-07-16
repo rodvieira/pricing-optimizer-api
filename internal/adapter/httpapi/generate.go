@@ -2,11 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -52,15 +55,28 @@ func (s *Server) GenerateVariations(w http.ResponseWriter, r *http.Request, para
 		return
 	}
 
+	in := toGenerateVariationsInput(req)
+
 	idempotencyKey := ""
-	if s.idempotency != nil && params.IdempotencyKey != nil {
-		idempotencyKey = *params.IdempotencyKey
+	if s.idempotency != nil {
+		if params.IdempotencyKey != nil && *params.IdempotencyKey != "" {
+			idempotencyKey = *params.IdempotencyKey
+		} else {
+			// No client-supplied key (or an explicit-but-empty header, treated
+			// the same way): derive one from the request content, so an
+			// identical request (issue #24's response-caching goal) still gets
+			// deduped through the exact same Reserve/replay machinery an
+			// explicit key uses, rather than a second, separate cache. See
+			// contentIdempotencyKey's doc comment for what "identical" means
+			// here.
+			idempotencyKey = contentIdempotencyKey(in)
+		}
 	}
 	if !s.checkIdempotency(w, r, idempotencyKey) {
 		return
 	}
 
-	events, err := s.streamer.Execute(r.Context(), toGenerateVariationsInput(req))
+	events, err := s.streamer.Execute(r.Context(), in)
 	if err != nil {
 		releaseIdempotencyReservation(r, s.idempotency, idempotencyKey)
 		writeGenerateError(w, r, err)
@@ -109,6 +125,41 @@ func toGenerateVariationsInput(req api.GenerateRequest) domain.GenerateVariation
 		Strategies:  strategies,
 		Currency:    currency,
 	}
+}
+
+// contentIdempotencyKey derives a deterministic implicit idempotency key
+// from in's semantic content — SiteProfile (excluding the volatile
+// AnalyzedAt timestamp, a scrape time, not part of what's being generated),
+// the requested strategies (order-independent), and currency — so two
+// structurally identical POST /v1/generate requests that don't send an
+// explicit Idempotency-Key still dedupe against each other (issue #24)
+// through the exact same Reserve/replay path an explicit key uses, rather
+// than a second, separate caching mechanism. "Identical" here means
+// exact-match on this content: a different currency or strategy set, or a
+// SiteProfile field that genuinely differs (a re-scrape that picked up
+// changed page content), is a different key and gets a fresh generation.
+func contentIdempotencyKey(in domain.GenerateVariationsInput) string {
+	sp := in.SiteProfile
+	sp.AnalyzedAt = time.Time{}
+
+	strategies := append([]domain.PricingStrategy(nil), in.Strategies...)
+	sort.Slice(strategies, func(i, j int) bool { return strategies[i] < strategies[j] })
+
+	data, err := json.Marshal(struct {
+		SiteProfile domain.SiteProfile
+		Strategies  []domain.PricingStrategy
+		Currency    string
+	}{sp, strategies, in.Currency})
+	if err != nil {
+		// Unreachable in practice — nothing in GenerateVariationsInput fails
+		// to marshal — but a genuine error here means no implicit key can be
+		// derived; the request proceeds as if no idempotency key were given
+		// at all, rather than panicking or hashing something wrong.
+		slog.Error("derive content idempotency key: marshal", "error", err)
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return "content:" + hex.EncodeToString(sum[:])
 }
 
 // fromAPISiteProfile maps the generated request shape to the domain type,

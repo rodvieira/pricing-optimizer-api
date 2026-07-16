@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/rodvieira/pricing-optimizer-api/internal/adapter/cache"
 	"github.com/rodvieira/pricing-optimizer-api/internal/api"
 	"github.com/rodvieira/pricing-optimizer-api/internal/domain"
 )
@@ -27,6 +28,17 @@ type analyzer interface {
 	Execute(ctx context.Context, rawURL string) (*domain.SiteProfile, error)
 }
 
+// analyzeCache is the minimal capability the /v1/analyze handler needs to
+// cache responses, keyed on the submitted URL. Defined here, at the point
+// of consumption, mirroring rateLimiter/idempotencyStore: cmd wires the
+// concrete cache.RedisResponseCache in, which satisfies this interface
+// structurally. A nil analyzeCache disables caching entirely (same "nil
+// means off" shape as rateLimiter/idempotency).
+type analyzeCache interface {
+	Get(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key, value string) error
+}
+
 // AnalyzeSite implements api.ServerInterface. (POST /v1/analyze)
 func (s *Server) AnalyzeSite(w http.ResponseWriter, r *http.Request) {
 	if !checkRateLimit(w, r, s.rateLimiter) {
@@ -40,13 +52,38 @@ func (s *Server) AnalyzeSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cache key is the raw, unnormalized URL: "https://x.com" and
+	// "https://x.com/" (or a different query-param order) are different
+	// cache entries. Deliberately simple for now — normalization is a cheap
+	// future improvement, not a correctness requirement (a miss just costs
+	// a redundant analyze, never a wrong answer).
+	if s.analyzeCache != nil {
+		if cached, err := s.analyzeCache.Get(r.Context(), req.Url); err == nil {
+			writeJSONBytes(w, r, []byte(cached))
+			return
+		} else if !errors.Is(err, cache.ErrResponseCacheMiss) {
+			slog.WarnContext(r.Context(), "analyze cache lookup failed, analyzing fresh", "error", err)
+		}
+	}
+
 	profile, err := s.analyzer.Execute(r.Context(), req.Url)
 	if err != nil {
 		writeAnalyzeError(w, r, err)
 		return
 	}
 
-	writeJSON(w, r, toAPISiteProfile(*profile))
+	data, err := json.Marshal(toAPISiteProfile(*profile))
+	if err != nil {
+		slog.ErrorContext(r.Context(), "encode analyze response", "error", err)
+		writeProblem(w, r, http.StatusInternalServerError, "could not encode the response", "")
+		return
+	}
+	if s.analyzeCache != nil {
+		if err := s.analyzeCache.Set(r.Context(), req.Url, string(data)); err != nil {
+			slog.WarnContext(r.Context(), "analyze cache save failed", "error", err)
+		}
+	}
+	writeJSONBytes(w, r, data)
 }
 
 // writeAnalyzeError maps an AnalyzeSite.Execute error to the RFC 7807

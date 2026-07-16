@@ -64,7 +64,7 @@ func TestGetGeneration(t *testing.T) {
 			mockGetter := mockhttpapi.NewMockgenerationGetter(ctrl)
 			tt.setup(mockGetter)
 
-			router := NewRouter(NewServer(nil, nil, mockGetter, nil, nil, nil))
+			router := NewRouter(NewServer(nil, nil, mockGetter, nil, nil, nil, nil))
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/generations/"+id, nil)
 			rec := httptest.NewRecorder()
