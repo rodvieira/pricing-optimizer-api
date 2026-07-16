@@ -1,10 +1,18 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 → 1.1.0
-- Rationale: Added the branch-per-task and pull-request-to-main workflow rule to
-  Development Workflow & Quality Gates. MINOR bump — materially expanded guidance, no
-  principle removed or redefined.
-- Modified sections: Development Workflow & Quality Gates (added branching + PR rules)
+- Version change: 1.1.0 → 1.2.0
+- Rationale: Two Sprint 7 findings invalidated the original deploy assumptions this
+  constraint was written under: (1) Fly.io no longer offers a free tier to new accounts
+  (only legacy Hobby/Launch-plan orgs keep it), so the backend host is now Google Cloud
+  Run, not Fly.io; (2) the scraper's chromedp fallback needs a real headless Chromium to
+  render SPAs, which cannot fit a distroless/30MB image under any packaging approach
+  (measured: 1.13GB with the full Chromium package). Cloud Run's real container-size
+  ceiling is 2GB, not 30MB. MINOR bump — this redefines an Additional Constraint (stack
+  & cost), not a Core Principle; no principle was removed or redefined.
+- Modified sections: Additional Constraints (Stack & Cost) — replaced the
+  distroless/30MB container rule and the Fly.io reference with the Cloud Run reality;
+  see ADR-0008 (Chromium packaging) and ADR-0009 (Cloud Run over Fly.io) in
+  `../docs/decisions/`.
 - Principles: unchanged
     I. Contract-First (OpenAPI 3.1)
     II. Clean Architecture Layer Boundaries
@@ -106,8 +114,15 @@ are themselves signals of engineering care.
 - Streaming for `/v1/generate` MUST use Server-Sent Events, not WebSockets.
 - The three variations MUST be generated in parallel (goroutines + errgroup).
 - Ongoing infrastructure cost target is $0/month; no paid infrastructure may be introduced.
-  Production runs on free tiers (Fly.io, Neon, Upstash, Groq, Grafana Cloud, Sentry).
-- The final container image MUST be a multi-stage, distroless build under 30MB.
+  Production runs on free tiers (Google Cloud Run, Neon, Upstash, Groq, Grafana Cloud,
+  Sentry) — see ADR-0009 for why Cloud Run replaces the originally planned Fly.io (its
+  free tier is no longer offered to new accounts).
+- The final container image MUST be a multi-stage build, keeping layers minimal where
+  practical, and MUST fit Cloud Run's 2GB container size limit. A fully distroless
+  image is not achievable here: the scraper's headless-Chromium fallback needs a real
+  userland (see ADR-0008), so "minimal" means trimming what's avoidable (multi-stage
+  build discarding the Go toolchain, `--no-install-recommends`, no unnecessary packages)
+  rather than a hard byte ceiling.
 
 ## Development Workflow & Quality Gates
 
@@ -142,4 +157,4 @@ alignment on every amendment. All PRs and reviews MUST verify compliance with th
 principles; added complexity MUST be justified against them. Runtime development guidance
 lives in `CLAUDE.md` and the umbrella `../.claude/CLAUDE.md`.
 
-**Version**: 1.1.0 | **Ratified**: 2026-07-14 | **Last Amended**: 2026-07-14
+**Version**: 1.2.0 | **Ratified**: 2026-07-14 | **Last Amended**: 2026-07-16
