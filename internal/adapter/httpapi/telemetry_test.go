@@ -11,34 +11,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rodvieira/pricing-optimizer-api/internal/domain"
 	mockhttpapi "github.com/rodvieira/pricing-optimizer-api/test/mocks/httpapi"
+	"github.com/rodvieira/pricing-optimizer-api/test/otelrecorder"
 )
-
-// withRecordingTracerProvider installs a real TracerProvider backed by an
-// in-memory span recorder for the duration of the test, restoring the noop
-// default (this package's tests otherwise run with no tracing configured,
-// same as production when OTEL_EXPORTER_OTLP_ENDPOINT is unset) afterward.
-func withRecordingTracerProvider(t *testing.T) *tracetest.SpanRecorder {
-	t.Helper()
-	recorder := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() {
-		require.NoError(t, tp.Shutdown(context.Background()))
-		otel.SetTracerProvider(noop.NewTracerProvider())
-	})
-	return recorder
-}
 
 func TestNewRouter_CreatesOneSpanPerRequest(t *testing.T) {
 	// Not t.Parallel(): mutates the process-global TracerProvider.
-	recorder := withRecordingTracerProvider(t)
+	recorder := otelrecorder.WithRecordingTracerProvider(t)
 
 	router := NewRouter(NewServer(nil, nil, nil, nil, nil))
 
@@ -55,7 +37,7 @@ func TestNewRouter_CreatesOneSpanPerRequest(t *testing.T) {
 
 func TestNewRouter_RenamesSpanToLowCardinalityRoutePattern(t *testing.T) {
 	// Not t.Parallel(): mutates the process-global TracerProvider.
-	recorder := withRecordingTracerProvider(t)
+	recorder := otelrecorder.WithRecordingTracerProvider(t)
 
 	ctrl := gomock.NewController(t)
 	mockGetter := mockhttpapi.NewMockgenerationGetter(ctrl)
@@ -77,7 +59,7 @@ func TestNewRouter_RenamesSpanToLowCardinalityRoutePattern(t *testing.T) {
 
 func TestWriteProblem_UsesRealTraceIDWhenASpanIsActive(t *testing.T) {
 	// Not t.Parallel(): mutates the process-global TracerProvider.
-	withRecordingTracerProvider(t)
+	otelrecorder.WithRecordingTracerProvider(t)
 
 	tracer := otel.Tracer("test")
 	ctx, span := tracer.Start(context.Background(), "test-span")
