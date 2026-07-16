@@ -23,6 +23,18 @@ func writeJSON(w http.ResponseWriter, r *http.Request, v any) {
 	}
 }
 
+// writeJSONBytes writes an already-encoded JSON body as a 200 OK response.
+// Used where the caller needs the encoded bytes for its own purposes too
+// (analyze.go caches the same bytes it writes), so encoding via writeJSON
+// would mean encoding twice.
+func writeJSONBytes(w http.ResponseWriter, r *http.Request, data []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(data); err != nil {
+		slog.ErrorContext(r.Context(), "write json response", "error", err)
+	}
+}
+
 // writeProblem writes an RFC 7807 problem+json response. traceId prefers
 // the real OpenTelemetry trace id from r's active span (set by the
 // otelhttp.NewHandler wrapping the whole router); when tracing is disabled

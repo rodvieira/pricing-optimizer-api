@@ -56,6 +56,14 @@ type Config struct {
 	// retry window comfortably without keeping keys around indefinitely.
 	IdempotencyTTL time.Duration `env:"IDEMPOTENCY_TTL" envDefault:"24h"`
 
+	// AnalyzeCacheTTL is how long a POST /v1/analyze response is cached,
+	// keyed on the submitted URL: a repeat analysis of the same URL within
+	// this window skips scraping and the LLM classification call entirely.
+	// Shorter than IdempotencyTTL on purpose — this is a freshness/cost
+	// tradeoff for a page whose content can genuinely change, not a
+	// retry-safety window for one specific in-flight request.
+	AnalyzeCacheTTL time.Duration `env:"ANALYZE_CACHE_TTL" envDefault:"1h"`
+
 	// DatabaseURL is the pgx connection string PostgresGenerationRepo
 	// connects with: Neon in production (per HANDOFF.md's $0/month
 	// constraint), a local container in development.
@@ -112,6 +120,9 @@ func (c Config) validate() error {
 	}
 	if c.IdempotencyTTL <= 0 {
 		return fmt.Errorf("invalid IDEMPOTENCY_TTL %s: must be positive", c.IdempotencyTTL)
+	}
+	if c.AnalyzeCacheTTL <= 0 {
+		return fmt.Errorf("invalid ANALYZE_CACHE_TTL %s: must be positive", c.AnalyzeCacheTTL)
 	}
 	return nil
 }

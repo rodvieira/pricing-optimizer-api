@@ -11,12 +11,13 @@ import (
 // fall through to api.Unimplemented, which responds with 501 Not Implemented.
 type Server struct {
 	api.Unimplemented
-	analyzer    analyzer
-	streamer    streamer
-	generations generationGetter
-	exporter    exporter
-	rateLimiter rateLimiter
-	idempotency idempotencyStore
+	analyzer     analyzer
+	streamer     streamer
+	generations  generationGetter
+	exporter     exporter
+	rateLimiter  rateLimiter
+	idempotency  idempotencyStore
+	analyzeCache analyzeCache
 }
 
 // NewServer creates the API server implementation. analyzer backs
@@ -29,14 +30,17 @@ type Server struct {
 // rateLimiter always allows, see checkRateLimit. idempotency backs the
 // Idempotency-Key header on POST /v1/generate (cache.RedisIdempotencyStore);
 // a nil idempotency disables the feature entirely (no lookup, no save),
-// same "nil means off" shape as rateLimiter.
+// same "nil means off" shape as rateLimiter. analyzeCache backs
+// POST /v1/analyze's response cache (cache.RedisResponseCache), same "nil
+// means off" shape.
 func NewServer(
 	analyzer analyzer, streamer streamer, generations generationGetter, exporter exporter,
-	rateLimiter rateLimiter, idempotency idempotencyStore,
+	rateLimiter rateLimiter, idempotency idempotencyStore, analyzeCache analyzeCache,
 ) *Server {
 	return &Server{
 		analyzer: analyzer, streamer: streamer, generations: generations,
 		exporter: exporter, rateLimiter: rateLimiter, idempotency: idempotency,
+		analyzeCache: analyzeCache,
 	}
 }
 

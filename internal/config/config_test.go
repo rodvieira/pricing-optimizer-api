@@ -38,6 +38,7 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, 10, cfg.RateLimitRequests)
 				assert.Equal(t, time.Minute, cfg.RateLimitWindow)
 				assert.Equal(t, 24*time.Hour, cfg.IdempotencyTTL)
+				assert.Equal(t, time.Hour, cfg.AnalyzeCacheTTL)
 				assert.Equal(t, "postgres://postgres:postgres@localhost:5432/pricing?sslmode=disable", cfg.DatabaseURL)
 				assert.Empty(t, cfg.OTELExporterEndpoint)
 			},
@@ -123,6 +124,19 @@ func TestLoad(t *testing.T) {
 			assert: func(t *testing.T, cfg Config) {
 				t.Helper()
 				assert.Equal(t, time.Hour, cfg.IdempotencyTTL)
+			},
+		},
+		{
+			name:    "non-positive analyze cache ttl is rejected",
+			env:     map[string]string{"ANALYZE_CACHE_TTL": "0s"},
+			wantErr: "invalid ANALYZE_CACHE_TTL",
+		},
+		{
+			name: "analyze cache ttl override is applied",
+			env:  map[string]string{"ANALYZE_CACHE_TTL": "30m"},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.Equal(t, 30*time.Minute, cfg.AnalyzeCacheTTL)
 			},
 		},
 		{

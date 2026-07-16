@@ -94,11 +94,13 @@ func run() error {
 	defer redisClient.Close()
 	rateLimiter := cache.NewRedisRateLimiter(redisClient, cfg.RateLimitRequests, cfg.RateLimitWindow)
 	idempotencyStore := cache.NewRedisIdempotencyStore(redisClient, cfg.IdempotencyTTL)
+	analyzeCache := cache.NewRedisResponseCache(redisClient, cfg.AnalyzeCacheTTL)
 
 	srv := &http.Server{
 		Addr: ":" + strconv.Itoa(cfg.Port),
 		Handler: httpapi.NewRouter(httpapi.NewServer(
-			analyzeSite, generateVariations, generationRepo, exportVariation, rateLimiter, idempotencyStore,
+			analyzeSite, generateVariations, generationRepo, exportVariation,
+			rateLimiter, idempotencyStore, analyzeCache,
 		)),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,

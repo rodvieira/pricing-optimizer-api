@@ -55,3 +55,56 @@ func (mr *MockanalyzerMockRecorder) Execute(ctx, rawURL any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Execute", reflect.TypeOf((*Mockanalyzer)(nil).Execute), ctx, rawURL)
 }
+
+// MockanalyzeCache is a mock of analyzeCache interface.
+type MockanalyzeCache struct {
+	ctrl     *gomock.Controller
+	recorder *MockanalyzeCacheMockRecorder
+	isgomock struct{}
+}
+
+// MockanalyzeCacheMockRecorder is the mock recorder for MockanalyzeCache.
+type MockanalyzeCacheMockRecorder struct {
+	mock *MockanalyzeCache
+}
+
+// NewMockanalyzeCache creates a new mock instance.
+func NewMockanalyzeCache(ctrl *gomock.Controller) *MockanalyzeCache {
+	mock := &MockanalyzeCache{ctrl: ctrl}
+	mock.recorder = &MockanalyzeCacheMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockanalyzeCache) EXPECT() *MockanalyzeCacheMockRecorder {
+	return m.recorder
+}
+
+// Get mocks base method.
+func (m *MockanalyzeCache) Get(ctx context.Context, key string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", ctx, key)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockanalyzeCacheMockRecorder) Get(ctx, key any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockanalyzeCache)(nil).Get), ctx, key)
+}
+
+// Set mocks base method.
+func (m *MockanalyzeCache) Set(ctx context.Context, key, value string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Set", ctx, key, value)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Set indicates an expected call of Set.
+func (mr *MockanalyzeCacheMockRecorder) Set(ctx, key, value any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockanalyzeCache)(nil).Set), ctx, key, value)
+}
