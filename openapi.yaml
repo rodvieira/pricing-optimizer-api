@@ -107,6 +107,8 @@ paths:
                 $ref: '#/components/schemas/StreamChunk'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
         '429':
@@ -202,7 +204,9 @@ components:
       required: false
       description: |
         Client-supplied key to make generation idempotent. Repeating a request with the
-        same key returns the same generation instead of producing a new one.
+        same key once the first has completed returns the same generation instead of
+        producing a new one. A repeat request with the same key while the first is still
+        in progress gets 409 Conflict instead of starting a second, redundant generation.
       schema:
         type: string
         minLength: 8
@@ -235,6 +239,15 @@ components:
           schema:
             type: integer
             minimum: 0
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: |
+        A generation with the same Idempotency-Key is already in progress. Wait for it to
+        finish, then retry with the same key to get its result, or use a new key to start
+        an unrelated generation.
       content:
         application/problem+json:
           schema:
