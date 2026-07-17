@@ -22,7 +22,7 @@ func TestNewRouter_CreatesOneSpanPerRequest(t *testing.T) {
 	// Not t.Parallel(): mutates the process-global TracerProvider.
 	recorder := otelrecorder.WithRecordingTracerProvider(t)
 
-	router := NewRouter(NewServer(nil, nil, nil, nil, nil, nil, nil))
+	router := NewRouter(NewServer(nil, nil, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -43,7 +43,7 @@ func TestNewRouter_RenamesSpanToLowCardinalityRoutePattern(t *testing.T) {
 	mockGetter := mockhttpapi.NewMockgenerationGetter(ctrl)
 	mockGetter.EXPECT().Get(gomock.Any(), gomock.Any()).Return(nil, domain.ErrGenerationNotFound)
 
-	router := NewRouter(NewServer(nil, nil, mockGetter, nil, nil, nil, nil))
+	router := NewRouter(NewServer(nil, nil, mockGetter, nil, nil, nil, nil), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
 		"/v1/generations/4f9e1c2b-1111-1111-1111-111111111111", nil)
@@ -83,7 +83,7 @@ func TestWriteProblem_FallsBackToChiRequestIDWithoutASpan(t *testing.T) {
 	// SpanContextFromContext(r.Context()) is invalid and writeProblem must
 	// fall back to chi's request id — exercised through the real router so
 	// the RequestID middleware actually runs, rather than faking its value.
-	router := NewRouter(NewServer(nil, nil, nil, nil, nil, nil, nil))
+	router := NewRouter(NewServer(nil, nil, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString("not json"))

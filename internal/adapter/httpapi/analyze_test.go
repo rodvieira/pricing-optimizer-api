@@ -111,7 +111,7 @@ func TestAnalyzeSite(t *testing.T) {
 			mockAnalyzer := mockhttpapi.NewMockanalyzer(ctrl)
 			tt.setup(mockAnalyzer)
 
-			router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, nil))
+			router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()
@@ -157,7 +157,7 @@ func TestAnalyzeSite_RateLimited(t *testing.T) {
 	// analyzer is nil: if the handler ever reached past the rate limit
 	// check, calling Execute on a nil interface would panic, so this
 	// doubles as proof the request never got that far.
-	router := NewRouter(NewServer(nil, nil, nil, nil, limiter, nil, nil))
+	router := NewRouter(NewServer(nil, nil, nil, nil, limiter, nil, nil), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
@@ -179,7 +179,7 @@ func TestAnalyzeSite_OmitsPricePositionWhenEmpty(t *testing.T) {
 	profile.Audience.PricePosition = ""
 	mockAnalyzer.EXPECT().Execute(gomock.Any(), "https://example.com").Return(&profile, nil)
 
-	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, nil))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
@@ -205,7 +205,7 @@ func TestAnalyzeSite_OmitsKeywordsWhenEmpty(t *testing.T) {
 	profile.Keywords = nil
 	mockAnalyzer.EXPECT().Execute(gomock.Any(), "https://example.com").Return(&profile, nil)
 
-	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, nil))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))

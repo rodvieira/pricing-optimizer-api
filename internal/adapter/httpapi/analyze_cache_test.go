@@ -35,7 +35,7 @@ func TestAnalyzeSite_Cache_MissAnalyzesAndSaves(t *testing.T) {
 			return nil
 		})
 
-	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, analyzeCache))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, analyzeCache), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
@@ -57,7 +57,7 @@ func TestAnalyzeSite_Cache_HitSkipsAnalyzeEntirely(t *testing.T) {
 
 	// analyzer is nil: a cache hit must never reach it. If it did, calling
 	// Execute on a nil interface would panic, which doubles as proof.
-	router := NewRouter(NewServer(nil, nil, nil, nil, nil, nil, analyzeCache))
+	router := NewRouter(NewServer(nil, nil, nil, nil, nil, nil, analyzeCache), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
@@ -82,7 +82,7 @@ func TestAnalyzeSite_Cache_LookupErrorFailsOpenToAFreshAnalysis(t *testing.T) {
 	mockAnalyzer.EXPECT().Execute(gomock.Any(), "https://example.com").Return(&profile, nil)
 	analyzeCache.EXPECT().Set(gomock.Any(), "https://example.com", gomock.Any()).Return(nil)
 
-	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, analyzeCache))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, analyzeCache), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
@@ -105,7 +105,7 @@ func TestAnalyzeSite_Cache_SaveErrorDoesNotFailTheRequest(t *testing.T) {
 	mockAnalyzer.EXPECT().Execute(gomock.Any(), "https://example.com").Return(&profile, nil)
 	analyzeCache.EXPECT().Set(gomock.Any(), "https://example.com", gomock.Any()).Return(errors.New("connection refused"))
 
-	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, analyzeCache))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, analyzeCache), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
@@ -125,7 +125,7 @@ func TestAnalyzeSite_Cache_NilCacheNeverTouchesTheStore(t *testing.T) {
 	profile := fixtureSiteProfile()
 	mockAnalyzer.EXPECT().Execute(gomock.Any(), "https://example.com").Return(&profile, nil)
 
-	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, nil))
+	router := NewRouter(NewServer(mockAnalyzer, nil, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/analyze",
 		bytes.NewBufferString(`{"url":"https://example.com"}`))
