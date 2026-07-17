@@ -41,7 +41,7 @@ func TestGenerateVariations_Idempotency_ReservedKeyStartsFreshAndSaves(t *testin
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 	store.EXPECT().Save(gomock.Any(), "fresh-idem-key", gen.ID).Return(nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("fresh-idem-key"))
@@ -64,7 +64,7 @@ func TestGenerateVariations_Idempotency_ReservedKeyIsReleasedWhenExecuteFails(t 
 	// back as "still in progress" for the rest of the TTL.
 	store.EXPECT().Release(gomock.Any(), "will-fail-key").Return(nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("will-fail-key"))
@@ -94,7 +94,7 @@ func TestGenerateVariations_Idempotency_ReservedKeyIsReleasedWhenSaveFails(t *te
 	store.EXPECT().Save(gomock.Any(), "save-fails-key", gen.ID).Return(errors.New("connection refused"))
 	store.EXPECT().Release(gomock.Any(), "save-fails-key").Return(nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("save-fails-key"))
@@ -124,7 +124,7 @@ func TestGenerateVariations_Idempotency_ReleaseUsesADetachedContextOnClientDisco
 		return nil
 	})
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // simulate a client that already disconnected
@@ -153,7 +153,7 @@ func TestGenerateVariations_Idempotency_ReservedKeyIsReleasedWhenTheStreamEndsBe
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 	store.EXPECT().Release(gomock.Any(), "empty-stream-key").Return(nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("empty-stream-key"))
@@ -183,7 +183,7 @@ func TestGenerateVariations_Idempotency_ReserveErrorFailsOpen(t *testing.T) {
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 	store.EXPECT().Save(gomock.Any(), "some-key", gen.ID).Return(nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("some-key"))
@@ -205,7 +205,7 @@ func TestGenerateVariations_Idempotency_UnreservedKeyMappedToACompletedGeneratio
 
 	// streamer is nil: a replay must never reach it. If it did, calling
 	// Execute on a nil interface would panic, which doubles as proof.
-	router := NewRouter(NewServer(nil, nil, mockGetter, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, nil, mockGetter, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("repeat-key"))
@@ -230,7 +230,7 @@ func TestGenerateVariations_Idempotency_PendingKeyReturnsConflict(t *testing.T) 
 
 	// analyzer/streamer/generations are all nil: a 409 must be written
 	// without touching any of them.
-	router := NewRouter(NewServer(nil, nil, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, nil, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("pending-key"))
@@ -253,7 +253,7 @@ func TestGenerateVariations_Idempotency_KeyMappedToAStillStreamingGenerationRetu
 
 	// streamer is nil: a genuinely-in-progress generation must not start a
 	// second one.
-	router := NewRouter(NewServer(nil, nil, mockGetter, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, nil, mockGetter, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("in-flight-key"))
@@ -282,7 +282,7 @@ func TestGenerateVariations_Idempotency_KeyMappedToAFailedGenerationStartsFresh(
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 	store.EXPECT().Save(gomock.Any(), "failed-key", gen.ID).Return(nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, mockGetter, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, mockGetter, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("failed-key"))
@@ -309,7 +309,7 @@ func TestGenerateVariations_Idempotency_UnreservedKeyMappedToAMissingGenerationS
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 	store.EXPECT().Save(gomock.Any(), "stale-key", gen.ID).Return(nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, mockGetter, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, mockGetter, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest("stale-key"))
@@ -332,7 +332,7 @@ func TestGenerateVariations_Idempotency_NilStoreNeverDerivesAContentKey(t *testi
 	// idempotency store is nil: checkIdempotency, contentIdempotencyKey, and
 	// saveIdempotencyMapping must all be no-ops regardless of the missing
 	// header, same as before issue #24's implicit-key derivation existed.
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, nil, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest(""))
@@ -360,7 +360,7 @@ func TestGenerateVariations_Idempotency_ExplicitEmptyHeaderAlsoDerivesAContentKe
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 	store.EXPECT().Save(gomock.Any(), gomock.Any(), gen.ID).Return(nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	// An explicit but empty header (as opposed to no header at all — nil vs.
 	// a pointer to "") must fall back to the content-derived key the same
@@ -395,7 +395,7 @@ func TestGenerateVariations_Idempotency_NoHeaderDerivesAContentKeyAndReservesIt(
 	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
 	store.EXPECT().Save(gomock.Any(), gomock.Any(), gen.ID).Return(nil)
 
-	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, newGenerateRequest(""))
@@ -418,7 +418,7 @@ func TestGenerateVariations_Idempotency_IdenticalRequestsWithoutHeaderShareTheSa
 		})
 	store.EXPECT().Get(gomock.Any(), gomock.Any()).Times(2).Return("", cache.ErrIdempotencyKeyPending)
 
-	router := NewRouter(NewServer(nil, nil, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, nil, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	for range 2 {
 		rec := httptest.NewRecorder()
@@ -444,7 +444,7 @@ func TestGenerateVariations_Idempotency_DifferentRequestsWithoutHeaderDeriveDiff
 		})
 	store.EXPECT().Get(gomock.Any(), gomock.Any()).Times(2).Return("", cache.ErrIdempotencyKeyPending)
 
-	router := NewRouter(NewServer(nil, nil, nil, nil, nil, store, nil))
+	router := NewRouter(NewServer(nil, nil, nil, nil, nil, store, nil), []string{"http://localhost:3000"})
 
 	bodies := []string{
 		validGenerateBody,

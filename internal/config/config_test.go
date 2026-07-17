@@ -41,6 +41,7 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, time.Hour, cfg.AnalyzeCacheTTL)
 				assert.Equal(t, "postgres://postgres:postgres@localhost:5432/pricing?sslmode=disable", cfg.DatabaseURL)
 				assert.Empty(t, cfg.OTELExporterEndpoint)
+				assert.Equal(t, []string{"http://localhost:3000"}, cfg.AllowedOrigins)
 			},
 		},
 		{
@@ -159,6 +160,14 @@ func TestLoad(t *testing.T) {
 			assert: func(t *testing.T, cfg Config) {
 				t.Helper()
 				assert.Equal(t, "postgres://user:pass@neon.example/pricing", cfg.DatabaseURL)
+			},
+		},
+		{
+			name: "allowed origins override is applied, comma-separated",
+			env:  map[string]string{"ALLOWED_ORIGINS": "https://app.example.com,https://staging.example.com"},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.Equal(t, []string{"https://app.example.com", "https://staging.example.com"}, cfg.AllowedOrigins)
 			},
 		},
 		{

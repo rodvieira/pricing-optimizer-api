@@ -101,7 +101,7 @@ func run() error {
 		Handler: httpapi.NewRouter(httpapi.NewServer(
 			analyzeSite, generateVariations, generationRepo, exportVariation,
 			rateLimiter, idempotencyStore, analyzeCache,
-		)),
+		), cfg.AllowedOrigins),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

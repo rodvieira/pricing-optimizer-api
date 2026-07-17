@@ -64,6 +64,13 @@ type Config struct {
 	// retry-safety window for one specific in-flight request.
 	AnalyzeCacheTTL time.Duration `env:"ANALYZE_CACHE_TTL" envDefault:"1h"`
 
+	// AllowedOrigins is the frontend origin(s) allowed to call this API
+	// cross-origin (comma-separated). The frontend is always a separate
+	// origin from this API — a separate Next.js repo/deploy (local dev on a
+	// different port, Vercel calling Cloud Run in production) — so CORS is
+	// required in every environment.
+	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000"`
+
 	// DatabaseURL is the pgx connection string PostgresGenerationRepo
 	// connects with: Neon in production (per HANDOFF.md's $0/month
 	// constraint), a local container in development.
@@ -123,6 +130,9 @@ func (c Config) validate() error {
 	}
 	if c.AnalyzeCacheTTL <= 0 {
 		return fmt.Errorf("invalid ANALYZE_CACHE_TTL %s: must be positive", c.AnalyzeCacheTTL)
+	}
+	if len(c.AllowedOrigins) == 0 {
+		return fmt.Errorf("invalid ALLOWED_ORIGINS: must not be empty")
 	}
 	return nil
 }

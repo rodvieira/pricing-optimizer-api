@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
 
@@ -12,8 +13,13 @@ import (
 )
 
 // NewRouter builds the HTTP handler: base middleware plus the routes generated
-// from the OpenAPI contract, dispatched to srv.
-func NewRouter(srv api.ServerInterface) http.Handler {
+// from the OpenAPI contract, dispatched to srv. allowedOrigins is the frontend
+// origin(s) allowed to call this API cross-origin (see config.AllowedOrigins) —
+// the frontend and backend are always separate origins in this product (a
+// separate Next.js repo/deploy, e.g. Vercel calling Cloud Run), never a same-
+// origin reverse-proxy setup, so CORS is load-bearing in every environment,
+// not just local dev.
+func NewRouter(srv api.ServerInterface, allowedOrigins []string) http.Handler {
 	r := chi.NewRouter()
 
 	// ClientIPFromRemoteAddr first, so the rate limiter's key is available
@@ -27,6 +33,14 @@ func NewRouter(srv api.ServerInterface) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	r.Use(renameSpanToRoutePattern)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins: allowedOrigins,
+		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodOptions},
+		// Idempotency-Key: issue #23. Accept: SSE responses from POST
+		// /v1/generate set it explicitly (see lib/api/generate.ts).
+		AllowedHeaders: []string{"Content-Type", "Accept", "Idempotency-Key"},
+		MaxAge:         300,
+	}))
 
 	// otelhttp wraps everything, including chi's own middleware, so the span
 	// covers the whole request lifecycle (a panic Recoverer catches still
