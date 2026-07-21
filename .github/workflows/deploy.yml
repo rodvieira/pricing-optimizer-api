@@ -98,5 +98,19 @@ jobs:
             REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
             GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
 
+      # Cloud Run defaults to IAM-authenticated-only invocations. This API is
+      # called directly from the browser (the frontend's client-side fetch,
+      # not a server-to-server call — see lib/api/generate.ts in the web
+      # repo), so it has to be publicly invokable; the rate limiter (10
+      # req/window per caller IP, ADR-0006) is the actual abuse guard here,
+      # not IAM. Idempotent, safe to re-run every deploy.
+      - name: Allow unauthenticated invocations
+        run: |
+          gcloud run services add-iam-policy-binding pricing-optimizer-api \
+            --region=${{ vars.GCP_REGION }} \
+            --member=allUsers \
+            --role=roles/run.invoker \
+            --quiet
+
       - name: Print service URL
         run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
