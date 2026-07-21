@@ -35,6 +35,7 @@ func TestLoad(t *testing.T) {
 				assert.Empty(t, cfg.ChromeExecPath)
 				assert.Equal(t, "localhost:6379", cfg.RedisAddr)
 				assert.Empty(t, cfg.RedisPassword)
+				assert.False(t, cfg.RedisTLSEnabled)
 				assert.Equal(t, 10, cfg.RateLimitRequests)
 				assert.Equal(t, time.Minute, cfg.RateLimitWindow)
 				assert.Equal(t, 24*time.Hour, cfg.IdempotencyTTL)
@@ -152,6 +153,14 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, "secret", cfg.RedisPassword)
 				assert.Equal(t, 5, cfg.RateLimitRequests)
 				assert.Equal(t, 30*time.Second, cfg.RateLimitWindow)
+			},
+		},
+		{
+			name: "redis TLS override is applied",
+			env:  map[string]string{"REDIS_TLS_ENABLED": "true"},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.True(t, cfg.RedisTLSEnabled)
 			},
 		},
 		{

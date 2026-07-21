@@ -39,9 +39,12 @@ type Config struct {
 	// RedisAddr/RedisPassword point at the rate limiter's backing Redis:
 	// Upstash in production (per HANDOFF.md's $0/month constraint), a local
 	// container in development. RedisPassword is empty for a local Redis
-	// with no AUTH configured.
-	RedisAddr     string `env:"REDIS_ADDR" envDefault:"localhost:6379"`
-	RedisPassword string `env:"REDIS_PASSWORD" envDefault:""`
+	// with no AUTH configured. RedisTLSEnabled must be true for Upstash,
+	// which only accepts TLS connections (rediss://, not redis://) — false
+	// for the local dev container, which doesn't speak TLS at all.
+	RedisAddr       string `env:"REDIS_ADDR" envDefault:"localhost:6379"`
+	RedisPassword   string `env:"REDIS_PASSWORD" envDefault:""`
+	RedisTLSEnabled bool   `env:"REDIS_TLS_ENABLED" envDefault:"false"`
 
 	// RateLimitRequests is how many calls a single client (identified by IP)
 	// may make to a rate-limited endpoint (/v1/analyze, /v1/generate — the

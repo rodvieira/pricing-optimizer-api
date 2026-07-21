@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -90,7 +91,14 @@ func run() error {
 	generateVariations := usecase.NewGenerateVariations(llmProvider, generationRepo)
 	exportVariation := usecase.NewExportVariation(generationRepo)
 
-	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+	redisOpts := &redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword}
+	if cfg.RedisTLSEnabled {
+		// Upstash only accepts TLS connections; the local dev container
+		// doesn't speak TLS at all, hence the env-gated toggle rather than
+		// always setting this.
+		redisOpts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	redisClient := redis.NewClient(redisOpts)
 	defer redisClient.Close()
 	rateLimiter := cache.NewRedisRateLimiter(redisClient, cfg.RateLimitRequests, cfg.RateLimitWindow)
 	idempotencyStore := cache.NewRedisIdempotencyStore(redisClient, cfg.IdempotencyTTL)
