@@ -88,6 +88,7 @@ jobs:
             LLM_PROVIDER=groq
             GROQ_MODEL=llama-3.3-70b-versatile
             GROQ_FALLBACK_MODEL=llama-3.1-8b-instant
+            REDIS_TLS_ENABLED=true
             RATE_LIMIT_REQUESTS=10
             RATE_LIMIT_WINDOW=1m
             IDEMPOTENCY_TTL=24h
