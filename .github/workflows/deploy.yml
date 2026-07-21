@@ -1,0 +1,101 @@
+name: Deploy
+
+# Builds the image, applies pending Postgres migrations, then deploys to
+# Cloud Run. Runs only after a push to main (i.e. after CI's own checks have
+# already passed on the merged PR) — this workflow does not re-lint/re-test,
+# it assumes main is already green.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Apply Postgres migrations
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install goose
+        run: go install github.com/pressly/goose/v3/cmd/goose@v3.27.2
+      - name: Migrate up
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: goose -dir db/migrations postgres "$DATABASE_URL" up
+
+  deploy:
+    name: Build and deploy to Cloud Run
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        env:
+          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_AR_REPO }}/pricing-optimizer-api
+        run: |
+          set -euo pipefail
+          docker build \
+            --build-arg VERSION="${GITHUB_SHA::7}" \
+            --build-arg COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -t "$IMAGE:$GITHUB_SHA" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker push "$IMAGE:latest"
+
+      # deploy-cloudrun's `secrets:` input maps to Secret Manager references
+      # (SECRET_NAME:VERSION), not raw values — this project isn't using
+      # Secret Manager (one less $0-tier moving part, see ADR-0013), so the
+      # actually-sensitive values (DATABASE_URL, REDIS_*, GROQ_API_KEY) are
+      # interpolated from GitHub Actions secrets straight into env_vars
+      # instead. They still never touch the repo or a log line: GitHub
+      # Actions masks any string that matches a registered secret's value
+      # wherever it would otherwise be printed.
+      - id: deploy
+        name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: pricing-optimizer-api
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_AR_REPO }}/pricing-optimizer-api:${{ github.sha }}
+          env_vars: |
+            APP_ENV=production
+            ALLOWED_ORIGINS=${{ vars.ALLOWED_ORIGINS }}
+            LLM_PROVIDER=groq
+            GROQ_MODEL=llama-3.3-70b-versatile
+            GROQ_FALLBACK_MODEL=llama-3.1-8b-instant
+            RATE_LIMIT_REQUESTS=10
+            RATE_LIMIT_WINDOW=1m
+            IDEMPOTENCY_TTL=24h
+            ANALYZE_CACHE_TTL=1h
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            REDIS_ADDR=${{ secrets.REDIS_ADDR }}
+            REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+            GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
+
+      - name: Print service URL
+        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
