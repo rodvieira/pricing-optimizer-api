@@ -114,8 +114,20 @@ These are also model-invocable: they load automatically when their task comes up
 
 ## Sprint status
 
-Phase 1: Sprint 1 (Foundation) and Sprint 2 (Contract: openapi codegen wiring, goose
-migrations) done. Sprint 3 (LLM abstraction: domain entities, Anthropic/Groq adapters,
-env-based factory) done. Next: Sprint 4 — GenerateVariations use case (errgroup fan-out
-over the LLMProvider port) + scraper (chromedp/colly) + AnalyzeSite use case. See
-HANDOFF.md section 12.
+Phase 1 (backend) is functionally complete and deployed. All 5 endpoints, Postgres
+persistence, Redis-backed rate limiting/caching/idempotency, CORS, and full OTel
+instrumentation are done — see `main`'s history (`git log --oneline main`) for the
+PR-by-PR record rather than trusting a sprint-number summary here, since this section
+drifts. Sprint 7 (deploy) is done; Grafana Cloud is wired (issue #39 —
+`OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_EXPORTER_OTLP_HEADERS` set as a GitHub Environment
+variable/secret and passed through in `deploy.yml`'s Cloud Run `env_vars`; no Go code
+change needed, `ADR-0007`'s gate already reads them). Backend Sentry (issue #40) is still
+open. Live on Cloud Run at
+`https://pricing-optimizer-api-hnzq7nvuqq-uc.a.run.app`, deployed automatically via
+`.github/workflows/deploy.yml` on every push to `main` (migrations via `goose`, then
+build/push/deploy, then an idempotent `run.invoker` binding for `allUsers` since this API
+is called directly from the browser — see `ADR-0013`). Neon (Postgres) and Upstash
+(Redis, TLS required — `REDIS_TLS_ENABLED`) are both provisioned and verified with a real
+production `POST /v1/analyze` round-trip, not just `/v1/healthz`. Issue #31 (self-hosted
+browser service) remains explicitly parked. Still open: a GCP billing budget alert was
+discussed but not confirmed configured — check before assuming it's done.

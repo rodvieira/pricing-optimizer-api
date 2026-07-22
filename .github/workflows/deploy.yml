@@ -97,6 +97,8 @@ jobs:
             REDIS_ADDR=${{ secrets.REDIS_ADDR }}
             REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
             GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
+            OTEL_EXPORTER_OTLP_ENDPOINT=${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+            OTEL_EXPORTER_OTLP_HEADERS=${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
 
       # Cloud Run defaults to IAM-authenticated-only invocations. This API is
       # called directly from the browser (the frontend's client-side fetch,
