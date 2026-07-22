@@ -1,7 +1,9 @@
 // Package telemetry wires the OpenTelemetry SDK: a TracerProvider exporting
 // spans via OTLP/HTTP, and a slog.Handler that stamps every log line with
 // the active span's trace_id/span_id. See ADR-0007 for why exporting is
-// gated behind an explicit endpoint rather than always attempting one.
+// gated behind an explicit endpoint rather than always attempting one, and
+// ADR-0014 for why spans are exported synchronously (WithSyncer) rather
+// than batched.
 package telemetry
 
 import (
@@ -61,8 +63,21 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 		return nil, fmt.Errorf("telemetry: build otlp exporter: %w", err)
 	}
 
+	// WithSyncer, not WithBatcher: Cloud Run only allocates CPU while a
+	// request is in flight (min-instances=0, CPU not always allocated —
+	// see ADR-0009). A BatchSpanProcessor's periodic background flush can
+	// easily never get scheduled before the instance freezes right after
+	// the response is written, silently dropping every span. Confirmed for
+	// real, not just theorized: after wiring Grafana Cloud (ADR/issue #39),
+	// a live request against production returned 200 and the service's own
+	// "telemetry enabled" log line confirmed the exporter was active, but
+	// no trace ever reached Grafana. WithSyncer's per-export latency is a
+	// non-issue at this project's traffic volume, and every request already
+	// takes seconds (LLM calls dominate), so a synchronous HTTP POST to the
+	// OTLP endpoint is not a meaningfully worse user-facing cost. See
+	// ADR-0014 for the fix's own verification status.
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithSyncer(exporter),
 		sdktrace.WithResource(res),
 	)
 	otel.SetTracerProvider(tp)
