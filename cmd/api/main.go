@@ -58,6 +58,10 @@ func run() error {
 		}
 	}()
 
+	if err := telemetry.InitSentry(cfg.SentryDSN, cfg.Env, buildinfo.Version); err != nil {
+		return fmt.Errorf("init sentry: %w", err)
+	}
+
 	llmProvider, err := llm.NewProvider(llm.Config{
 		Provider:        cfg.LLMProvider,
 		AnthropicAPIKey: cfg.AnthropicAPIKey,
