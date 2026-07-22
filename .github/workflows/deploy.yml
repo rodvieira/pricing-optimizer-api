@@ -99,6 +99,7 @@ jobs:
             GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
             OTEL_EXPORTER_OTLP_ENDPOINT=${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
             OTEL_EXPORTER_OTLP_HEADERS=${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+            SENTRY_DSN=${{ vars.SENTRY_DSN }}
 
       # Cloud Run defaults to IAM-authenticated-only invocations. This API is
       # called directly from the browser (the frontend's client-side fetch,

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -11,6 +12,15 @@ import (
 
 	"github.com/rodvieira/pricing-optimizer-api/internal/api"
 )
+
+// sentryMiddleware recovers a panic, reports it to Sentry (a safe no-op if
+// telemetry.InitSentry was never called — SENTRY_DSN unset), then re-panics
+// so middleware.Recoverer below — registered earlier in NewRouter, so it
+// wraps this one from the outside — still catches it and writes the actual
+// 500 response. Order matters: Recoverer must run outside this middleware,
+// not inside it, or a panic here would have nothing left to write a
+// response at all.
+var sentryMiddleware = sentryhttp.New(sentryhttp.Options{Repanic: true}).Handle
 
 // NewRouter builds the HTTP handler: base middleware plus the routes generated
 // from the OpenAPI contract, dispatched to srv. allowedOrigins is the frontend
@@ -32,6 +42,7 @@ func NewRouter(srv api.ServerInterface, allowedOrigins []string) http.Handler {
 	r.Use(middleware.ClientIPFromRemoteAddr)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
+	r.Use(sentryMiddleware)
 	r.Use(renameSpanToRoutePattern)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: allowedOrigins,

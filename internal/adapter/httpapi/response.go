@@ -3,9 +3,12 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/go-chi/chi/v5/middleware"
 	"go.opentelemetry.io/otel/trace"
 
@@ -41,6 +44,14 @@ func writeJSONBytes(w http.ResponseWriter, r *http.Request, data []byte) {
 // (telemetry.Init installed the noop TracerProvider, so the span context is
 // invalid) it falls back to chi's request id middleware as a correlation id
 // that's still unique per request, just not an OTel trace_id.
+//
+// status >= 500 also reports to Sentry (a safe no-op if telemetry.InitSentry
+// was never called): these are server-side bugs worth tracking, unlike 4xx,
+// which is a client sending something invalid — expected traffic, not an
+// error to triage. Call sites only ever have title/detail strings, not the
+// original error value, so this constructs one from them; Sentry still
+// captures a real stack trace at this call site regardless, which is what
+// actually matters for triage.
 func writeProblem(w http.ResponseWriter, r *http.Request, status int, title, detail string) {
 	problem := api.Problem{
 		Status: status,
@@ -56,9 +67,37 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, title, det
 		problem.TraceId = &reqID
 	}
 
+	if status >= http.StatusInternalServerError {
+		reportToSentry(r, status, title, detail, problem.TraceId)
+	}
+
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(problem); err != nil {
 		slog.ErrorContext(r.Context(), "encode problem response", "error", err)
 	}
+}
+
+func reportToSentry(r *http.Request, status int, title, detail string, traceID *string) {
+	msg := title
+	if detail != "" {
+		msg = title + ": " + detail
+	}
+	hub := sentry.GetHubFromContext(r.Context())
+	if hub == nil {
+		hub = sentry.CurrentHub()
+	}
+	hub.WithScope(func(scope *sentry.Scope) {
+		scope.SetTag("http.method", r.Method)
+		scope.SetTag("http.path", r.URL.Path)
+		scope.SetTag("http.status", strconv.Itoa(status))
+		if traceID != nil {
+			// Ties a Sentry error report back to the matching OTel trace in
+			// Grafana Cloud — the two observability tools cover different
+			// signals (errors vs. request timing/spans), this is the bridge
+			// between them.
+			scope.SetTag("trace_id", *traceID)
+		}
+		hub.CaptureException(errors.New(msg))
+	})
 }

@@ -85,6 +85,15 @@ type Config struct {
 	// standard OTEL_EXPORTER_OTLP_* env vars itself; this field only
 	// decides on/off. See ADR-0007.
 	OTELExporterEndpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:""`
+
+	// SentryDSN gates error tracking the same way OTELExporterEndpoint gates
+	// tracing: empty means telemetry.InitSentry is a no-op. Not a secret —
+	// Sentry's own docs describe the DSN as safe to expose (it's a
+	// submit-only endpoint identifier), same reasoning as the frontend's
+	// NEXT_PUBLIC_SENTRY_DSN (issue #19/#24). Separate Sentry *project* from
+	// the frontend's (same org) so Go backend errors and Next.js frontend
+	// errors don't mix in one issue stream.
+	SentryDSN string `env:"SENTRY_DSN" envDefault:""`
 }
 
 // Load reads and validates the configuration from the environment.
