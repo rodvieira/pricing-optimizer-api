@@ -74,6 +74,22 @@ type Config struct {
 	// required in every environment.
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000"`
 
+	// TrustedProxyHops is how many reverse-proxy hops sit between the public
+	// internet and this server, and decides which client IP the rate
+	// limiter's key (httpapi.NewRouter's WithTrustedProxyHops) is derived
+	// from: 0, the default, trusts the raw TCP peer address (correct for
+	// local dev, which has no reverse proxy in front); a positive value
+	// trusts that many hops of X-Forwarded-For instead, reading the entry
+	// added by the outermost trusted hop rather than one a client could have
+	// forged. Cloud Run production sets this to 1 — Google's front end is
+	// the sole hop between the public internet and this container for this
+	// product's deploy topology (the frontend calls this API directly, over
+	// CORS, never through another intermediate proxy) — because the raw TCP
+	// peer address there is always Google's front end, not the caller, which
+	// silently made RATE_LIMIT_REQUESTS a near-global budget instead of a
+	// per-caller one.
+	TrustedProxyHops int `env:"TRUSTED_PROXY_HOPS" envDefault:"0"`
+
 	// DatabaseURL is the pgx connection string PostgresGenerationRepo
 	// connects with: Neon in production (per HANDOFF.md's $0/month
 	// constraint), a local container in development.
@@ -145,6 +161,9 @@ func (c Config) validate() error {
 	}
 	if len(c.AllowedOrigins) == 0 {
 		return fmt.Errorf("invalid ALLOWED_ORIGINS: must not be empty")
+	}
+	if c.TrustedProxyHops < 0 {
+		return fmt.Errorf("invalid TRUSTED_PROXY_HOPS %d: must not be negative", c.TrustedProxyHops)
 	}
 	return nil
 }

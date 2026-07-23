@@ -75,6 +75,15 @@ jobs:
       # instead. They still never touch the repo or a log line: GitHub
       # Actions masks any string that matches a registered secret's value
       # wherever it would otherwise be printed.
+      # TRUSTED_PROXY_HOPS=1 below: Cloud Run's front end is the sole reverse
+      # proxy between the public internet and this container in this
+      # product's deploy topology, so the rate limiter's client-IP key must
+      # come from X-Forwarded-For's trusted entry, not the raw TCP peer
+      # address (which is always Google's front end here, not the caller —
+      # see config.TrustedProxyHops and httpapi.NewRouter's
+      # WithTrustedProxyHops for the full reasoning). Must stay in sync with
+      # the actual number of reverse-proxy hops in front of this service if
+      # that topology ever changes.
       - id: deploy
         name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
@@ -91,6 +100,7 @@ jobs:
             REDIS_TLS_ENABLED=true
             RATE_LIMIT_REQUESTS=10
             RATE_LIMIT_WINDOW=1m
+            TRUSTED_PROXY_HOPS=1
             IDEMPOTENCY_TTL=24h
             ANALYZE_CACHE_TTL=1h
             DATABASE_URL=${{ secrets.DATABASE_URL }}

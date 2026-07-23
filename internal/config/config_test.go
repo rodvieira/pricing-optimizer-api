@@ -43,6 +43,7 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, "postgres://postgres:postgres@localhost:5432/pricing?sslmode=disable", cfg.DatabaseURL)
 				assert.Empty(t, cfg.OTELExporterEndpoint)
 				assert.Equal(t, []string{"http://localhost:3000"}, cfg.AllowedOrigins)
+				assert.Zero(t, cfg.TrustedProxyHops)
 			},
 		},
 		{
@@ -186,6 +187,19 @@ func TestLoad(t *testing.T) {
 				t.Helper()
 				assert.Equal(t, "https://otlp.example.com:4318", cfg.OTELExporterEndpoint)
 			},
+		},
+		{
+			name: "trusted proxy hops override is applied",
+			env:  map[string]string{"TRUSTED_PROXY_HOPS": "1"},
+			assert: func(t *testing.T, cfg Config) {
+				t.Helper()
+				assert.Equal(t, 1, cfg.TrustedProxyHops)
+			},
+		},
+		{
+			name:    "negative trusted proxy hops is rejected",
+			env:     map[string]string{"TRUSTED_PROXY_HOPS": "-1"},
+			wantErr: "invalid TRUSTED_PROXY_HOPS",
 		},
 	}
 

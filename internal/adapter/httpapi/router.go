@@ -22,6 +22,32 @@ import (
 // response at all.
 var sentryMiddleware = sentryhttp.New(sentryhttp.Options{Repanic: true}).Handle
 
+// RouterOption configures optional NewRouter behavior. Kept as functional
+// options (rather than growing NewRouter's positional parameter list)
+// specifically so the dozens of existing call sites across this package's
+// tests — none of which care about client-IP-source configuration — don't
+// need touching every time a new one is added.
+type RouterOption func(*routerConfig)
+
+type routerConfig struct {
+	trustedProxyHops int
+}
+
+// WithTrustedProxyHops configures the rate limiter's client-IP key to come
+// from X-Forwarded-For instead of the raw TCP peer address, trusting exactly
+// n reverse-proxy hops between the public internet and this server (see
+// middleware.ClientIPFromXFFTrustedProxies's doc comment for the exact
+// semantics, and its own warning about what happens if n stops matching
+// reality). n <= 0 is a no-op — NewRouter's default (ClientIPFromRemoteAddr)
+// already covers that case. See config.TrustedProxyHops for why this needs
+// to be configurable at all: Cloud Run in production sits one reverse-proxy
+// hop in front of this server, and the raw TCP peer address there is always
+// that hop's own IP, not the caller's — see NewRouter's own comment for what
+// that silently did to the rate limiter before this existed.
+func WithTrustedProxyHops(n int) RouterOption {
+	return func(c *routerConfig) { c.trustedProxyHops = n }
+}
+
 // NewRouter builds the HTTP handler: base middleware plus the routes generated
 // from the OpenAPI contract, dispatched to srv. allowedOrigins is the frontend
 // origin(s) allowed to call this API cross-origin (see config.AllowedOrigins) —
@@ -29,17 +55,31 @@ var sentryMiddleware = sentryhttp.New(sentryhttp.Options{Repanic: true}).Handle
 // separate Next.js repo/deploy, e.g. Vercel calling Cloud Run), never a same-
 // origin reverse-proxy setup, so CORS is load-bearing in every environment,
 // not just local dev.
-func NewRouter(srv api.ServerInterface, allowedOrigins []string) http.Handler {
+func NewRouter(srv api.ServerInterface, allowedOrigins []string, opts ...RouterOption) http.Handler {
+	cfg := routerConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	r := chi.NewRouter()
 
-	// ClientIPFromRemoteAddr first, so the rate limiter's key is available
-	// before anything else runs. Unlike the deprecated middleware.RealIP, it
-	// never trusts a client-controlled header (X-Forwarded-For/X-Real-IP):
-	// it stores the raw TCP peer address, so it can't be spoofed. This repo
-	// has no reverse proxy topology decided yet (deploy is Sprint 7); once
-	// one exists, swap in whichever ClientIPFrom* middleware matches it
-	// (e.g. a single trusted header the proxy unconditionally overwrites).
-	r.Use(middleware.ClientIPFromRemoteAddr)
+	// The client-IP middleware runs first, so the rate limiter's key is
+	// available before anything else runs. Without WithTrustedProxyHops (the
+	// default, and every environment with no reverse proxy in front — local
+	// dev, this package's own tests), ClientIPFromRemoteAddr is correct:
+	// unlike the deprecated middleware.RealIP, it never trusts a
+	// client-controlled header, only the raw TCP peer address, so it can't
+	// be spoofed. That address stops being the actual caller once a reverse
+	// proxy sits in front, though — Cloud Run production wires
+	// WithTrustedProxyHops(1) (via config.TrustedProxyHops) for exactly this
+	// reason: the raw TCP peer address there is always Google's front end,
+	// which made RATE_LIMIT_REQUESTS (ADR-0006) a near-global budget shared
+	// by every caller behind that front end, not a per-caller one.
+	if cfg.trustedProxyHops > 0 {
+		r.Use(middleware.ClientIPFromXFFTrustedProxies(cfg.trustedProxyHops))
+	} else {
+		r.Use(middleware.ClientIPFromRemoteAddr)
+	}
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	r.Use(sentryMiddleware)
