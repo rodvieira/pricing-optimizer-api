@@ -38,12 +38,8 @@ func writeJSONBytes(w http.ResponseWriter, r *http.Request, data []byte) {
 	}
 }
 
-// writeProblem writes an RFC 7807 problem+json response. traceId prefers
-// the real OpenTelemetry trace id from r's active span (set by the
-// otelhttp.NewHandler wrapping the whole router); when tracing is disabled
-// (telemetry.Init installed the noop TracerProvider, so the span context is
-// invalid) it falls back to chi's request id middleware as a correlation id
-// that's still unique per request, just not an OTel trace_id.
+// writeProblem writes an RFC 7807 problem+json response. traceId is
+// resolved via traceIDFromRequest.
 //
 // status >= 500 also reports to Sentry (a safe no-op if telemetry.InitSentry
 // was never called): these are server-side bugs worth tracking, unlike 4xx,
@@ -60,12 +56,7 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, title, det
 	if detail != "" {
 		problem.Detail = &detail
 	}
-	if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
-		traceID := sc.TraceID().String()
-		problem.TraceId = &traceID
-	} else if reqID := middleware.GetReqID(r.Context()); reqID != "" {
-		problem.TraceId = &reqID
-	}
+	problem.TraceId = traceIDFromRequest(r)
 
 	if status >= http.StatusInternalServerError {
 		reportToSentry(r, status, title, detail, problem.TraceId)
@@ -76,6 +67,25 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, title, det
 	if err := json.NewEncoder(w).Encode(problem); err != nil {
 		slog.ErrorContext(r.Context(), "encode problem response", "error", err)
 	}
+}
+
+// traceIDFromRequest prefers the real OpenTelemetry trace id from r's active
+// span (set by the otelhttp.NewHandler wrapping the whole router); when
+// tracing is disabled (telemetry.Init installed the noop TracerProvider, so
+// the span context is invalid) it falls back to chi's request id middleware
+// as a correlation id that's still unique per request, just not an OTel
+// trace_id. Shared by writeProblem and generate.go's in-stream Sentry
+// reporting — both need to tie a Sentry event back to the same trace a
+// request's OTel spans (in Grafana Cloud) and slog lines already carry.
+func traceIDFromRequest(r *http.Request) *string {
+	if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+		traceID := sc.TraceID().String()
+		return &traceID
+	}
+	if reqID := middleware.GetReqID(r.Context()); reqID != "" {
+		return &reqID
+	}
+	return nil
 }
 
 func reportToSentry(r *http.Request, status int, title, detail string, traceID *string) {

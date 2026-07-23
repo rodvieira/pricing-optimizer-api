@@ -12,6 +12,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 
 	"github.com/rodvieira/pricing-optimizer-api/internal/api"
@@ -243,6 +244,7 @@ func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.Gene
 			}
 			if ev.Type == domain.GenerationEventError && ev.Err != nil {
 				slog.ErrorContext(r.Context(), "generate variations: stream error", "error", ev.Err, "strategy", ev.Strategy)
+				reportStreamErrorToSentry(r, ev)
 			}
 
 			chunk := toAPIStreamChunk(ev)
@@ -260,6 +262,63 @@ func streamSSE(w http.ResponseWriter, r *http.Request, events <-chan domain.Gene
 			return
 		}
 	}
+}
+
+// reportStreamErrorToSentry reports ev's error to Sentry (a safe no-op if
+// telemetry.InitSentry was never called), mirroring writeProblem's status
+// >= 500 reporting for the one class of failure that never goes through
+// writeProblem at all: an SSE stream's response status line is always 200,
+// written the moment the first event arrives (writeSSEHeader), before any
+// use-case failure could possibly be known — so a mid-stream LLM provider
+// failure or a repository error saving the terminal Generation state has no
+// HTTP error status to report through writeProblem the way every other
+// failure in this codebase does. Without this, those failures are visible
+// only in slog, not in Sentry, alongside the request-level ones writeProblem
+// already tracks.
+//
+// Unlike writeProblem's reportToSentry, this captures ev.Err directly
+// (the real error value, not a string built from a title/detail pair),
+// since callers here always have it — a richer, more accurate Sentry
+// stack/exception type than writeProblem manages.
+//
+// Only reports the terminal/aggregate error event — the one
+// generate_variations.go's run() sends after every strategy's goroutine
+// has finished (Strategy left unset there, whether the failure was a
+// strategy error or a repository Save failure persisting the terminal
+// Generation state), never a per-strategy GenerationEventError. A failing
+// strategy always produces both: streamStrategy sends its own per-strategy
+// event the moment the failure happens, and run() still sends the terminal
+// one afterward regardless. Reporting both would double- (or, with
+// multiple failing strategies, quadruple-) report the same underlying
+// failure as separate, differently-worded Sentry issues — the per-strategy
+// event carries the raw error, the terminal one a "stream %s variation:
+// %w"-wrapped version of whichever failed first — fragmenting one incident
+// into several. The terminal event alone is enough: it fires exactly once
+// per generation, regardless of how many strategies were requested or
+// failed, and still names the failing strategy in its wrapped message.
+//
+// Also skips context.Canceled/DeadlineExceeded: those are the client
+// disconnecting or a deadline this same request set, expected traffic in a
+// long-lived SSE stream, not a bug to triage — the same no-alert-on-
+// client-behavior stance writeProblem takes for 4xx.
+func reportStreamErrorToSentry(r *http.Request, ev domain.GenerationEvent) {
+	if ev.Strategy != "" {
+		return
+	}
+	if errors.Is(ev.Err, context.Canceled) || errors.Is(ev.Err, context.DeadlineExceeded) {
+		return
+	}
+	hub := sentry.GetHubFromContext(r.Context())
+	if hub == nil {
+		hub = sentry.CurrentHub()
+	}
+	hub.WithScope(func(scope *sentry.Scope) {
+		scope.SetTag("http.path", r.URL.Path)
+		if traceID := traceIDFromRequest(r); traceID != nil {
+			scope.SetTag("trace_id", *traceID)
+		}
+		hub.CaptureException(ev.Err)
+	})
 }
 
 // idempotencyStoreCallTimeout bounds the detached context

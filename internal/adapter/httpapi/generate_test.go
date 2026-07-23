@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -262,6 +263,124 @@ func TestGenerateVariations_MidStreamErrorEventDoesNotLeak(t *testing.T) {
 	require.True(t, ok, "error frame must carry a problem")
 	assert.NotContains(t, rec.Body.String(), "credentials rejected", "must not leak the internal error text")
 	assert.NotEmpty(t, problem["title"])
+}
+
+func TestGenerateVariations_ReportsTerminalStreamErrorToSentry(t *testing.T) {
+	// Not t.Parallel(): initFakeSentry mutates the process-global Sentry hub.
+	transport := initFakeSentry(t)
+
+	ctrl := gomock.NewController(t)
+	mockStreamer := mockhttpapi.NewMockstreamer(ctrl)
+
+	// Strategy deliberately unset: this is the shape of the terminal/
+	// aggregate error event generate_variations.go's run() sends once every
+	// strategy's goroutine has finished, the only GenerationEventError
+	// reportStreamErrorToSentry reports — see its doc comment for why
+	// per-strategy events (Strategy set) are deliberately skipped.
+	events := make(chan domain.GenerationEvent, 1)
+	events <- domain.GenerationEvent{
+		Type: domain.GenerationEventError,
+		Err:  errors.New("stream anchor variation: credentials rejected by upstream llm provider"),
+	}
+	close(events)
+	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
+
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "the SSE response itself is always 200, even though the stream carried a failure")
+	captured := transport.captured()
+	require.Len(t, captured, 1, "a mid-stream generation failure must reach Sentry even though no writeProblem call is ever made for it")
+	event := captured[0]
+	require.NotEmpty(t, event.Exception, "must be captured as an exception, not a bare message")
+	assert.Equal(t, "stream anchor variation: credentials rejected by upstream llm provider", event.Exception[0].Value,
+		"must capture the real error value, unlike writeProblem's synthesized title/detail string")
+	assert.Equal(t, "/v1/generate", event.Tags["http.path"])
+	assert.NotContains(t, event.Tags, "pricing_strategy", "the terminal event never carries a Strategy")
+}
+
+func TestGenerateVariations_DoesNotReportPerStrategyErrorToSentry(t *testing.T) {
+	// Not t.Parallel(): initFakeSentry mutates the process-global Sentry hub.
+	transport := initFakeSentry(t)
+
+	ctrl := gomock.NewController(t)
+	mockStreamer := mockhttpapi.NewMockstreamer(ctrl)
+
+	// A per-strategy GenerationEventError (Strategy set) is always followed
+	// by generate_variations.go's own terminal event for the same failure —
+	// reporting this one too would double-report one incident as two
+	// separate, differently-worded Sentry issues.
+	events := make(chan domain.GenerationEvent, 1)
+	events <- domain.GenerationEvent{
+		Type: domain.GenerationEventError, Strategy: domain.StrategyAnchor,
+		Err: errors.New("credentials rejected by upstream llm provider"),
+	}
+	close(events)
+	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
+
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, transport.captured(), "a per-strategy error event must not be independently reported to Sentry")
+}
+
+func TestGenerateVariations_DoesNotReportClientDisconnectToSentry(t *testing.T) {
+	// Not t.Parallel(): initFakeSentry mutates the process-global Sentry hub.
+	transport := initFakeSentry(t)
+
+	ctrl := gomock.NewController(t)
+	mockStreamer := mockhttpapi.NewMockstreamer(ctrl)
+
+	events := make(chan domain.GenerationEvent, 1)
+	events <- domain.GenerationEvent{Type: domain.GenerationEventError, Err: context.Canceled}
+	close(events)
+	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
+
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	assert.Empty(t, transport.captured(),
+		"a client disconnecting mid-stream is expected traffic, not a bug — must not spam Sentry")
+}
+
+func TestGenerateVariations_SentryDisabledIsANoopForStreamErrors(t *testing.T) {
+	// Not t.Parallel(): mutates the process-global Sentry hub.
+	sentry.CurrentHub().BindClient(nil)
+
+	ctrl := gomock.NewController(t)
+	mockStreamer := mockhttpapi.NewMockstreamer(ctrl)
+
+	// Strategy left unset so this actually exercises reportStreamErrorToSentry's
+	// real capture path (a per-strategy event is skipped regardless of Sentry
+	// state, which would make this test pass even if the no-op guard were
+	// broken) — see TestGenerateVariations_ReportsTerminalStreamErrorToSentry.
+	events := make(chan domain.GenerationEvent, 1)
+	events <- domain.GenerationEvent{Type: domain.GenerationEventError, Err: errors.New("provider timed out")}
+	close(events)
+	mockStreamer.EXPECT().Execute(gomock.Any(), gomock.Any()).Return((<-chan domain.GenerationEvent)(events), nil)
+
+	router := NewRouter(NewServer(nil, mockStreamer, nil, nil, nil, nil, nil), []string{"http://localhost:3000"})
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/generate", bytes.NewBufferString(validGenerateBody))
+	rec := httptest.NewRecorder()
+
+	assert.NotPanics(t, func() {
+		router.ServeHTTP(rec, req)
+	})
+	require.Equal(t, http.StatusOK, rec.Code, "the SSE stream must still complete normally")
 }
 
 // nonFlushingWriter implements http.ResponseWriter but deliberately not
