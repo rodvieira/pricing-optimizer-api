@@ -91,6 +91,99 @@ history; these are the ones that shaped the system most:
   specifically for a free tier with no credit-card-triggered surprise, verified against
   current pricing rather than assumed, with `min-instances=0` non-negotiable on Cloud Run.
 
+## Concurrency & design patterns
+
+Generating three pricing strategies from one product URL is the part of this system
+actually worth writing home about — it's a small, real concurrency problem, not a toy one.
+
+**Fan-out, hand-rolled.** `GenerateVariations.Execute` launches one goroutine per
+strategy over a plain `sync.WaitGroup`, fanning results into a single buffered channel
+the SSE handler drains:
+
+```go
+var wg sync.WaitGroup
+for i, strategy := range in.Strategies {
+    wg.Add(1)
+    go func(i int, strategy domain.PricingStrategy) {
+        defer wg.Done()
+        uc.streamStrategy(ctx, in, i, strategy, send, recordErr, setVariation)
+    }(i, strategy)
+}
+wg.Wait()
+```
+
+Error aggregation is "first error wins," `sync.Mutex`-guarded — the same semantics
+`errgroup.Group` gives you, spelled out by hand. The one deliberate departure from
+`errgroup.WithContext`'s usual behavior: **a failing strategy does not cancel its
+siblings.** Each of the three keeps streaming independently until it finishes or the
+*caller's* context is canceled — so a client sees two completed strategies and one
+error instead of losing all three to one bad LLM response.
+
+**Cancellation propagates by convention, not by magic.** Every producer — the three LLM
+adapters, the fan-out loop itself — pushes into its output channel through the same
+`select`-on-`ctx.Done()` shape:
+
+```go
+select {
+case out <- chunk:
+    return true
+case <-ctx.Done():
+    return false
+}
+```
+
+The moment the HTTP request context cancels (client disconnect, timeout), every
+goroutine still running unwinds on its own within one scheduler tick — no explicit
+cancel signal has to be threaded through by hand.
+
+**Detached contexts where cancellation would be actively wrong.** Two places
+deliberately break that same propagation with `context.WithoutCancel`: persisting the
+final generation status, and releasing/saving an idempotency reservation. Both are
+triggered *by* a client disconnecting, which cancels `r.Context()` at exactly the moment
+the cleanup needs to run — passing the canceled context straight through would make the
+Redis/Postgres call fail before it even starts, defeating the point.
+
+**Idempotent SSE, the invariant that took the most iteration to get right.**
+`POST /v1/generate` derives an idempotency key from the request body when the caller
+doesn't send one, reserves it with an atomic Redis `SETNX`, and — this is the part that's
+easy to get subtly wrong — must release that reservation on *every* exit path that
+doesn't reach a successful save: an `Execute` error before streaming starts, a stream
+that ends with zero events, a save failure that happens after the SSE header is already
+written. A single `idempotencySaved` bool plus one `defer` closes all of them:
+
+```go
+idempotencySaved := false
+defer func() {
+    if !idempotencySaved {
+        releaseIdempotencyReservation(r, store, idempotencyKey)
+    }
+}()
+```
+
+Getting this wrong in one specific way — gating the release on "was the HTTP header
+already written" instead of "did the save actually succeed" — leaves a key stuck at
+`"pending"` for its full 24h TTL, wrongly rejecting a legitimate retry with 409. Rate
+limiting has its own atomicity story: the increment-and-expire check is one Redis Lua
+script (`EVAL`), not two round-trips, so a key can never end up incremented but never
+expiring.
+
+**Patterns underneath it all**, all structural (Go interfaces), no framework:
+
+- **Strategy** — `LLMProvider` is one interface, two interchangeable implementations
+  (Anthropic, Groq) selected purely by config in `llm.NewProvider`.
+- **Decorator** — `TracingProvider` wraps whichever `LLMProvider` was selected and adds
+  an OTel span around every call, implementing the identical interface so nothing
+  downstream can tell the difference: `llmProvider = llm.NewTracingProvider(llmProvider, ...)`.
+- **Fallback composite** — `FallbackScraper` tries a fast static fetch first, escalating
+  to a full headless-browser scrape only on failure or thin content, behind one
+  `Scraper` interface.
+- **Repository** — `GenerationRepo` is a port defined in `domain`, implemented against
+  Postgres in `adapter/repository`; nothing above `domain` knows or cares that it's
+  Postgres.
+- **Manual dependency injection** — no DI container or framework. Every dependency is
+  wired explicitly, once, as plain constructor calls in `cmd/api/main.go`'s `run()`.
+  Explicit over magic: the whole object graph is readable top to bottom in one function.
+
 ## API
 
 | Method | Path | Purpose |
