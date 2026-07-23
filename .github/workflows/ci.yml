@@ -94,6 +94,25 @@ jobs:
           fi
           go build ./...
 
+  vulncheck:
+    name: Vulnerability scan (govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: gofiles
+        name: Detect Go files
+        run: |
+          if [ -n "$(git ls-files '*.go')" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "no Go files yet; govulncheck runs once the first package lands"
+          fi
+      - uses: golang/govulncheck-action@v1
+        if: steps.gofiles.outputs.present == 'true'
+        with:
+          go-version-file: go.mod
+
   commitlint:
     name: Commitlint
     runs-on: ubuntu-latest
