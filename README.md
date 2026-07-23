@@ -3,6 +3,7 @@
 [![CI](https://github.com/rodvieira/pricing-optimizer-api/actions/workflows/ci.yml/badge.svg)](https://github.com/rodvieira/pricing-optimizer-api/actions/workflows/ci.yml)
 [![Deploy](https://github.com/rodvieira/pricing-optimizer-api/actions/workflows/deploy.yml/badge.svg)](https://github.com/rodvieira/pricing-optimizer-api/actions/workflows/deploy.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/rodvieira/pricing-optimizer-api)](https://goreportcard.com/report/github.com/rodvieira/pricing-optimizer-api)
+[![Coverage](https://img.shields.io/badge/coverage-80%25%2B%20floor%20(usecase%2Fdomain)-brightgreen)](./.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 Go backend for **Pricing Optimizer**: paste a product URL, get three AI-generated
@@ -16,6 +17,31 @@ streamed live over Server-Sent Events.
 ```bash
 curl https://pricing-optimizer-api-hnzq7nvuqq-uc.a.run.app/v1/healthz
 # {"status":"ok","version":"..."}
+```
+
+A real `POST /v1/analyze` round-trip against the live deploy, not a fixture:
+
+```bash
+curl -X POST https://pricing-optimizer-api-hnzq7nvuqq-uc.a.run.app/v1/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://linear.app"}'
+```
+
+```json
+{
+  "url": "https://linear.app",
+  "title": "Linear – The system for product development",
+  "valueProposition": "Linear is a product development system that helps teams plan, build, and launch products with AI workflows at its core.",
+  "industry": "developer-tools",
+  "audience": {
+    "segment": "product development teams",
+    "sophistication": "high",
+    "pricePosition": "premium"
+  },
+  "keywords": ["product development", "AI workflows", "team collaboration"],
+  "sourceType": "static",
+  "analyzedAt": "2026-07-23T23:02:08.287572969Z"
+}
 ```
 
 ## What it does
