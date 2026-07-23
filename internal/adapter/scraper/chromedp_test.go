@@ -29,6 +29,21 @@ func chromePath(t *testing.T) string {
 	return ""
 }
 
+// newChromedpScraperUnguarded builds a ChromedpScraper whose host guard
+// always passes, so it can reach an httptest server on 127.0.0.1 — which
+// guardHostResolvesToPublicAddress, NewChromedpScraper's production default,
+// deliberately refuses. Test-only seam; production wiring always goes
+// through NewChromedpScraper. Tests that specifically exercise the guard
+// (TestChromedpScraper_Scrape_RejectsLoopbackAddress) use
+// NewChromedpScraper directly instead.
+func newChromedpScraperUnguarded(execPath string, timeout time.Duration) *ChromedpScraper {
+	return &ChromedpScraper{
+		execPath:  execPath,
+		timeout:   timeout,
+		hostGuard: func(context.Context, string) error { return nil },
+	}
+}
+
 func TestChromedpScraper_Scrape(t *testing.T) {
 	t.Parallel()
 
@@ -38,7 +53,7 @@ func TestChromedpScraper_Scrape(t *testing.T) {
 <body><h1>Real-time analytics</h1><p>For indie SaaS founders.</p></body></html>`
 	srv := staticHTMLServer(t, html)
 
-	s := NewChromedpScraper(execPath, 20*time.Second)
+	s := newChromedpScraperUnguarded(execPath, 20*time.Second)
 	page, err := s.Scrape(context.Background(), srv.URL)
 
 	require.NoError(t, err)
@@ -67,7 +82,7 @@ func TestChromedpScraper_Scrape_RendersClientSideContent(t *testing.T) {
 </body></html>`
 	srv := staticHTMLServer(t, html)
 
-	s := NewChromedpScraper(execPath, 20*time.Second)
+	s := newChromedpScraperUnguarded(execPath, 20*time.Second)
 	page, err := s.Scrape(context.Background(), srv.URL)
 
 	require.NoError(t, err)
@@ -81,7 +96,7 @@ func TestChromedpScraper_Scrape_EmptyBody(t *testing.T) {
 
 	srv := staticHTMLServer(t, `<html><head><title></title></head><body></body></html>`)
 
-	s := NewChromedpScraper(execPath, 20*time.Second)
+	s := newChromedpScraperUnguarded(execPath, 20*time.Second)
 	page, err := s.Scrape(context.Background(), srv.URL)
 
 	require.ErrorIs(t, err, domain.ErrEmptyScrape)
@@ -91,9 +106,25 @@ func TestChromedpScraper_Scrape_EmptyBody(t *testing.T) {
 func TestChromedpScraper_Scrape_InvalidExecPath(t *testing.T) {
 	t.Parallel()
 
-	s := NewChromedpScraper("/nonexistent/chrome-binary", 5*time.Second)
+	s := newChromedpScraperUnguarded("/nonexistent/chrome-binary", 5*time.Second)
 	_, err := s.Scrape(context.Background(), "http://127.0.0.1:1")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "chromedp")
+}
+
+// TestChromedpScraper_Scrape_RejectsLoopbackAddress proves the SSRF guard is
+// actually wired into NewChromedpScraper's production default, not just
+// correct in resolve_guard_test.go's isolation. Deliberately uses the real,
+// unmodified constructor (not newChromedpScraperUnguarded). No Chrome/
+// Chromium binary is needed to run this: the guard rejects before any
+// browser process is ever launched, so this must be provable without one.
+func TestChromedpScraper_Scrape_RejectsLoopbackAddress(t *testing.T) {
+	t.Parallel()
+
+	s := NewChromedpScraper("/nonexistent/chrome-binary", 5*time.Second)
+	_, err := s.Scrape(context.Background(), "http://127.0.0.1:9/")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a publicly reachable address")
 }

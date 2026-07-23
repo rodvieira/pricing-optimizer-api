@@ -7,6 +7,8 @@ package scraper
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -17,22 +19,70 @@ import (
 
 const collyUserAgent = "PricingOptimizerBot/1.0 (+https://github.com/rodvieira/pricing-optimizer-api)"
 
+// dialContextFunc matches net.Dialer.DialContext's signature (and, via that,
+// http.Transport.DialContext's), narrowed so tests can inject an unguarded
+// dialer to reach an httptest server on 127.0.0.1 — which safeDialer, the
+// production default, deliberately refuses to connect to.
+type dialContextFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+
 // CollyScraper fetches a URL over plain HTTP and parses the returned HTML.
 // It cannot see content injected by client-side JavaScript.
 type CollyScraper struct {
 	timeout time.Duration
+	dial    dialContextFunc
 }
 
 // NewCollyScraper creates a static-HTML scraper with the given per-request
-// timeout.
+// timeout. Every connection it makes — including ones triggered by
+// following a redirect to a different host — is dialed through safeDialer,
+// which resolves and validates the target address before connecting (see
+// resolveAllowedIP's doc comment for why this exists at the transport level
+// rather than only checking the requested URL up front).
 func NewCollyScraper(timeout time.Duration) *CollyScraper {
-	return &CollyScraper{timeout: timeout}
+	return &CollyScraper{timeout: timeout, dial: safeDialer(timeout)}
+}
+
+// safeDialer returns a DialContext that resolves addr's host via
+// resolveAllowedIP and connects only to the address that check approves,
+// instead of the address net.Dialer would otherwise resolve and connect to
+// unchecked. Wired into the collector's http.Transport so it runs on every
+// dial the collector makes for the lifetime of one Scrape call, not just the
+// first request — an http.Transport following a redirect issues a new
+// dial through the same Transport, so a public-looking URL that 302s to an
+// internal address is caught here too.
+func safeDialer(timeout time.Duration) dialContextFunc {
+	dialer := &net.Dialer{Timeout: timeout}
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("split host/port %q: %w", addr, err)
+		}
+		ip, err := resolveAllowedIP(ctx, host, net.DefaultResolver.LookupIPAddr)
+		if err != nil {
+			return nil, err
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+	}
 }
 
 // Scrape implements domain.Scraper.
 func (s *CollyScraper) Scrape(ctx context.Context, rawURL string) (*domain.ScrapedPage, error) {
 	c := colly.NewCollector(colly.StdlibContext(ctx), colly.UserAgent(collyUserAgent))
 	c.SetRequestTimeout(s.timeout)
+	// Cloned from http.DefaultTransport, not a bare &http.Transport{}, so
+	// pinning DialContext doesn't also silently drop its other defaults
+	// (ProxyFromEnvironment, TLSHandshakeTimeout, HTTP/2 negotiation, idle
+	// connection tuning) — only the dial behavior itself is overridden. The
+	// type assertion is always true for the stdlib's own http.DefaultTransport
+	// (it is a *http.Transport literal); the fallback exists only to satisfy
+	// golangci-lint's check-type-assertions rule without a bare panic.
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		defaultTransport = &http.Transport{}
+	}
+	transport := defaultTransport.Clone()
+	transport.DialContext = s.dial
+	c.WithTransport(transport)
 
 	page := &domain.ScrapedPage{URL: rawURL, SourceType: domain.SourceTypeStatic}
 

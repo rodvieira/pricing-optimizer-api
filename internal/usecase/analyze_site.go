@@ -51,9 +51,11 @@ func (uc *AnalyzeSite) Execute(ctx context.Context, rawURL string) (*domain.Site
 // This deliberately does not resolve arbitrary hostnames: doing so here
 // would only check the DNS answer at validation time, not the one the
 // scraper's own HTTP client resolves moments later (a DNS-rebinding TOCTOU
-// gap). Closing that gap requires pinning the resolved IP at the transport
-// level inside the scraper adapters themselves, which is out of scope for
-// this use case.
+// gap). That gap is closed separately, at the point each scraper adapter
+// actually connects — see adapter/scraper's resolveAllowedIP, used by both
+// the colly path's transport-level dial guard and the chromedp path's
+// pre-navigation check — not here, since this use case has no visibility
+// into what a scraper's transport resolves moments after this check passes.
 func validateAnalyzeURL(rawURL string) error {
 	if rawURL == "" {
 		return fmt.Errorf("%w: url is required", domain.ErrInvalidInput)
@@ -74,16 +76,8 @@ func validateAnalyzeURL(rawURL string) error {
 	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
 		return fmt.Errorf("%w: localhost is not an analyzable host", domain.ErrInvalidInput)
 	}
-	if ip := net.ParseIP(host); ip != nil && isDisallowedIP(ip) {
+	if ip := net.ParseIP(host); ip != nil && domain.IsDisallowedIP(ip) {
 		return fmt.Errorf("%w: url host %s is not a publicly analyzable address", domain.ErrInvalidInput, host)
 	}
 	return nil
-}
-
-// isDisallowedIP reports whether ip is a loopback, private, link-local, or
-// unspecified address that a public "analyze this URL" endpoint must never
-// reach.
-func isDisallowedIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }

@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,6 +26,17 @@ func staticHTMLServer(t *testing.T, html string) *httptest.Server {
 	return srv
 }
 
+// newCollyScraperUnguarded builds a CollyScraper with a plain net.Dialer
+// carrying no SSRF guard, so it can reach an httptest server on 127.0.0.1 —
+// which safeDialer, NewCollyScraper's production default, deliberately
+// refuses to connect to. Test-only seam; production wiring always goes
+// through NewCollyScraper. Tests that specifically exercise the guard
+// (TestCollyScraper_Scrape_RejectsLoopbackAddress) use NewCollyScraper
+// directly instead.
+func newCollyScraperUnguarded(timeout time.Duration) *CollyScraper {
+	return &CollyScraper{timeout: timeout, dial: (&net.Dialer{Timeout: timeout}).DialContext}
+}
+
 func TestCollyScraper_Scrape(t *testing.T) {
 	t.Parallel()
 
@@ -37,7 +49,7 @@ func TestCollyScraper_Scrape(t *testing.T) {
 </body></html>`
 
 	srv := staticHTMLServer(t, html)
-	s := NewCollyScraper(5 * time.Second)
+	s := newCollyScraperUnguarded(5 * time.Second)
 
 	page, err := s.Scrape(context.Background(), srv.URL)
 
@@ -53,7 +65,7 @@ func TestCollyScraper_Scrape(t *testing.T) {
 func TestCollyScraper_Scrape_UnreachableHost(t *testing.T) {
 	t.Parallel()
 
-	s := NewCollyScraper(2 * time.Second)
+	s := newCollyScraperUnguarded(2 * time.Second)
 
 	// Port 1 is never listening.
 	_, err := s.Scrape(context.Background(), "http://127.0.0.1:1")
@@ -66,10 +78,25 @@ func TestCollyScraper_Scrape_EmptyBody(t *testing.T) {
 	t.Parallel()
 
 	srv := staticHTMLServer(t, `<html><head><title>Empty</title></head><body></body></html>`)
-	s := NewCollyScraper(5 * time.Second)
+	s := newCollyScraperUnguarded(5 * time.Second)
 
 	page, err := s.Scrape(context.Background(), srv.URL)
 
 	require.ErrorIs(t, err, domain.ErrEmptyScrape)
 	assert.Nil(t, page)
+}
+
+// TestCollyScraper_Scrape_RejectsLoopbackAddress proves the SSRF guard is
+// actually wired into NewCollyScraper's production dialer, not just correct
+// in resolve_guard_test.go's isolation. Deliberately uses the real,
+// unmodified constructor (not newCollyScraperUnguarded).
+func TestCollyScraper_Scrape_RejectsLoopbackAddress(t *testing.T) {
+	t.Parallel()
+
+	s := NewCollyScraper(2 * time.Second)
+
+	_, err := s.Scrape(context.Background(), "http://127.0.0.1:9/")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a publicly reachable address")
 }
